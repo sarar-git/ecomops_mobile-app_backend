@@ -16,14 +16,13 @@ services:
           property: connectionString
       - key: PYTHON_VERSION
         value: 3.11.0
+  - type: redis
+    name: ecomops-app-redis
+    ipAllowList: [] # only allow internal connections
+    plan: free
+
 databases:
   - name: ecomops-app-db
     databaseName: ecomops
     user: ecomops_user
-    plan: free
-
-services:
-  - type: redis
-    name: ecomops-app-redis
-    ipAllowList: [] # only allow internal connections
     plan: free
