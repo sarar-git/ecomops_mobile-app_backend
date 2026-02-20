@@ -23,21 +23,26 @@ class Base(DeclarativeBase):
     metadata = metadata
 
 
-# Create async engine
+# Create async engine (Render-safe)
+engine_kwargs = {
+    "echo": settings.DEBUG,
+    "pool_pre_ping": True,     # Avoid stale connections on Render
+}
+
 if settings.DATABASE_URL.startswith("sqlite"):
-    # SQLite doesn't support pool_size and max_overflow
     engine = create_async_engine(
         settings.DATABASE_URL,
-        echo=settings.DEBUG,
+        **engine_kwargs,
     )
 else:
-    # PostgreSQL and other databases
     engine = create_async_engine(
         settings.DATABASE_URL,
         pool_size=settings.DATABASE_POOL_SIZE,
         max_overflow=settings.DATABASE_MAX_OVERFLOW,
-        echo=settings.DEBUG,
+        pool_recycle=1800,      # Recycle connections every 30 min
+        **engine_kwargs,
     )
+
 
 # Session factory
 async_session_maker = async_sessionmaker(
@@ -50,7 +55,4 @@ async_session_maker = async_sessionmaker(
 async def get_db() -> AsyncSession:
     """Dependency to get database session."""
     async with async_session_maker() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
+        yield session
