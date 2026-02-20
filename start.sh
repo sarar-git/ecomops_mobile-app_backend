@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Exit on error
-set -o errexit
+set -e  # Exit immediately on error
 
-# Apply database migrations
 echo "Applying database migrations..."
 alembic upgrade head
 
-# Start the application
 echo "Starting application..."
-exec gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:$PORT
+exec gunicorn app.main:app \
+  -k uvicorn.workers.UvicornWorker \
+  -w 2 \
+  --bind 0.0.0.0:${PORT:-10000} \
+  --timeout 120
