@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: ecomops-mobile-backend
+    env: python
+    rootDir: .
+    buildCommand: pip install -r requirements.txt
+    startCommand: ./start.sh
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: MAIN_BACKEND_URL
+        sync: false
+      - key: BRIDGE_API_KEY
+        sync: false
