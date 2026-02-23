@@ -15,23 +15,12 @@ from app.core.config import settings
 
 config = context.config
 
-try:
-    print(f"Loading database configuration from settings...")
-    database_url = settings.DATABASE_URL
-    if not database_url:
-        print("CRITICAL: DATABASE_URL is EMPTY in settings!")
-        raise RuntimeError("DATABASE_URL is not set in environment or .env")
-    
-    # Redact password for security
-    import re
-    redacted_url = re.sub(r':([^/@]+)@', ':****@', database_url)
-    print(f"Using database URL (redacted): {redacted_url}")
+config = context.config
 
-except Exception as e:
-    print(f"ERROR during configuration loading: {str(e)}")
-    import traceback
-    traceback.print_exc()
-    sys.exit(255) # Match the exit code reported by Render
+# Load DATABASE_URL from settings (Pydantic handles .env and env vars)
+database_url = settings.DATABASE_URL
+if not database_url:
+    raise RuntimeError("DATABASE_URL is not set in environment or .env")
 
 # Force sync-compatible driver URL for Alembic
 # - Mapping everything to postgresql+psycopg so it uses the v3 driver
