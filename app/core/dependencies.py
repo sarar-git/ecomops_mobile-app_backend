@@ -42,17 +42,35 @@ async def get_current_user(
     token: TokenPayload = Depends(get_current_token),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Get the current authenticated user."""
+    """Get the current authenticated user with JIT provisioning."""
     result = await db.execute(
         select(User).where(User.id == token.sub)
     )
     user = result.scalar_one_or_none()
     
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
+        # JIT Provisioning: If user exists in Supabase but not locally, create it.
+        # This is safe because we've already verified the Supabase JWT.
+        from app.models.user import UserRole # Import here to avoid circular dependencies if any
+        
+        user = User(
+            id=token.sub,
+            email=token.email or token.user_metadata.get("email"),
+            role=UserRole(token.role) if token.role else UserRole.MOBILE_USER,
+            is_active=True,
+            # Passwords are not stored for Supabase users in the mobile backend
+            hashed_password="SUPABASE_AUTH" 
         )
+        db.add(user)
+        try:
+            await db.commit()
+            await db.refresh(user)
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to provision user: {str(e)}"
+            )
     
     if not user.is_active:
         raise HTTPException(

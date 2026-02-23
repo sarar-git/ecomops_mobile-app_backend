@@ -13,15 +13,15 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 class TokenPayload(BaseModel):
-    """JWT token payload."""
+    """JWT token payload compliant with Supabase JWT."""
     sub: str  # user_id
-    tenant_id: str
-    role: str
-    warehouse_id: Optional[str] = None
-    type: str  # "access" or "refresh"
+    email: Optional[str] = None
+    role: Optional[str] = None # Custom claim in app_metadata
+    type: str = "access" # We'll default to access for Supabase tokens
     exp: datetime
     iat: datetime
-    jti: str  # unique token id
+    app_metadata: dict = {}
+    user_metadata: dict = {}
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -83,13 +83,21 @@ def create_refresh_token(
 
 
 def decode_token(token: str) -> Optional[TokenPayload]:
-    """Decode and validate a JWT token."""
+    """Decode and validate a Supabase JWT token."""
     try:
+        # Note: We use the Supabase JWT Secret here
         payload = jwt.decode(
             token,
             settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM]
+            algorithms=[settings.JWT_ALGORITHM],
+            options={"verify_aud": False} # Same as web backend configuration
         )
+        
+        # Extract role from app_metadata if present
+        role = payload.get("app_metadata", {}).get("role")
+        payload["role"] = role
+        
         return TokenPayload(**payload)
-    except JWTError:
+    except JWTError as e:
+        print(f"Token decode error: {e}")
         return None
