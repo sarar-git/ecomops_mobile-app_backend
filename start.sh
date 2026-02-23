@@ -2,6 +2,8 @@
 set -e  # Exit immediately on error
 
 echo "Applying database migrations..."
+# Force stamp the local version if the DB is out of sync
+alembic stamp 001_initial_schema
 alembic upgrade head
 
 echo "Starting application..."
