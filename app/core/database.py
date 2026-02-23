@@ -8,9 +8,18 @@ from app.core.config import settings
 
 def _normalize_async_database_url(database_url: str) -> str:
     """Normalize async database URL to installed async driver(s)."""
-    # Backward compatibility: accept legacy asyncpg URLs and run with psycopg driver.
+    # Accept legacy asyncpg URLs and run with psycopg driver (psycopg 3)
     if database_url.startswith("postgresql+asyncpg://"):
         return database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
+    
+    # Accept legacy heroku-style postgres:// URLs and ensure psycopg driver
+    if database_url.startswith("postgres://"):
+        return database_url.replace("postgres://", "postgresql+psycopg://", 1)
+        
+    # Ensure plain postgresql:// uses the installed psycopg (v3) driver
+    if database_url.startswith("postgresql://") and "+psycopg" not in database_url:
+        return database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+        
     return database_url
 
 

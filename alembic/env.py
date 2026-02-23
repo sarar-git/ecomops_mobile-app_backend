@@ -21,10 +21,13 @@ if not database_url:
     raise RuntimeError("DATABASE_URL is not set in environment or .env")
 
 # Force sync-compatible driver URL for Alembic
-# - Legacy asyncpg URLs are mapped to psycopg (installed driver)
-# - psycopg URLs are already sync-compatible for Alembic
-if "+asyncpg" in database_url:
+# - Mapping everything to postgresql+psycopg so it uses the v3 driver
+if database_url.startswith("postgresql+asyncpg://"):
     sync_database_url = database_url.replace("+asyncpg", "+psycopg")
+elif database_url.startswith("postgres://"):
+    sync_database_url = database_url.replace("postgres://", "postgresql+psycopg://", 1)
+elif database_url.startswith("postgresql://") and "+psycopg" not in database_url:
+    sync_database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
 else:
     sync_database_url = database_url
 
