@@ -11,13 +11,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.database import Base
 from app.models import Tenant, Warehouse, User, Manifest, ScanEvent
+from app.core.config import settings
 
 config = context.config
 
-# Load DATABASE_URL from environment (REQUIRED on Render)
-database_url = os.getenv("DATABASE_URL")
+# Load DATABASE_URL from settings (Pydantic handles .env and env vars)
+database_url = settings.DATABASE_URL
 if not database_url:
-    raise RuntimeError("DATABASE_URL is not set")
+    raise RuntimeError("DATABASE_URL is not set in environment or .env")
 
 # Force sync-compatible driver URL for Alembic
 # - Legacy asyncpg URLs are mapped to psycopg (installed driver)
