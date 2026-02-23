@@ -2,7 +2,7 @@
 set -e  # Exit immediately on error
 
 echo "Applying database migrations..."
-# Force stamp the local version if the DB is out of sync
+# Force stamp the local version to the new version_table (alembic_version_mobile)
 alembic stamp 001_initial_schema
 alembic upgrade head
 
