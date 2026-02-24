@@ -80,18 +80,27 @@ async def get_current_user(
                     
                 tenant_id = first_tenant.id
 
+            # Safe Role Selection
+            # Fallback if the token role isn't in our enum (e.g. 'authenticated')
+            target_role = UserRole.MOBILE_USER
+            if token.role:
+                try:
+                    target_role = UserRole(token.role)
+                except ValueError:
+                    logger.warning(f"Unknown role in token: {token.role}, defaulting to MOBILE_USER")
+
             user = User(
                 id=token.sub,
                 tenant_id=tenant_id,
                 email=token.email or token.user_metadata.get("email") or "unknown@ecomops.com",
-                role=UserRole(token.role) if token.role else UserRole.MOBILE_USER,
+                role=target_role,
                 is_active=True,
                 hashed_password="SUPABASE_AUTH" 
             )
             db.add(user)
             await db.commit()
             await db.refresh(user)
-            logger.info(f"JIT Provisioned user: {user.id}, tenant: {tenant_id}")
+            logger.info(f"JIT Provisioned user: {user.id}, tenant: {tenant_id}, role: {target_role}")
 
         # DEFENSIVE: Ensure the tenant has at least one warehouse (for existing data)
         # This prevents the "disabled dropdown" in the mobile app
@@ -122,9 +131,10 @@ async def get_current_user(
         raise
     except Exception as e:
         logger.exception(f"Error in get_current_user check/provisioning: {e}")
+        # Return clearer message in detail for debugging 500s
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Authentication secondary check failed: {str(e)}"
+            detail=f"Authentication secondary check failed: {type(e).__name__}: {str(e)}"
         )
 
 
