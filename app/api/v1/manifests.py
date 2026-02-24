@@ -32,64 +32,73 @@ async def start_manifest(
     db: DbSession,
 ):
     """Start a new manifest. Only one OPEN manifest allowed per unique combination."""
-    # Verify warehouse belongs to tenant
-    warehouse_result = await db.execute(
-        select(Warehouse)
-        .where(
-            Warehouse.id == request.warehouse_id,
-            Warehouse.tenant_id == ctx.tenant_id
+    try:
+        # Verify warehouse belongs to tenant
+        warehouse_result = await db.execute(
+            select(Warehouse)
+            .where(
+                Warehouse.id == request.warehouse_id,
+                Warehouse.tenant_id == ctx.tenant_id
+            )
         )
-    )
-    warehouse = warehouse_result.scalar_one_or_none()
-    
-    if warehouse is None:
+        warehouse = warehouse_result.scalar_one_or_none()
+        
+        if warehouse is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Warehouse not found",
+            )
+        
+        # Check for existing OPEN manifest with same combination
+        existing_result = await db.execute(
+            select(Manifest)
+            .where(
+                Manifest.tenant_id == ctx.tenant_id,
+                Manifest.warehouse_id == request.warehouse_id,
+                Manifest.manifest_date == request.manifest_date,
+                Manifest.shift == request.shift,
+                Manifest.marketplace == request.marketplace,
+                Manifest.carrier == request.carrier,
+                Manifest.flow_type == request.flow_type,
+                Manifest.status == ManifestStatus.OPEN
+            )
+        )
+        existing = existing_result.scalar_one_or_none()
+        
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"An OPEN manifest already exists for this combination. Manifest ID: {existing.id}",
+            )
+        
+        # Create new manifest
+        manifest = Manifest(
+            tenant_id=ctx.tenant_id,
+            warehouse_id=request.warehouse_id,
+            manifest_date=request.manifest_date,
+            shift=request.shift,
+            marketplace=request.marketplace,
+            carrier=request.carrier,
+            flow_type=request.flow_type,
+            status=ManifestStatus.OPEN,
+            created_by=ctx.user_id,
+        )
+        
+        db.add(manifest)
+        await db.commit()
+        await db.refresh(manifest)
+        
+        logger.info(f"Manifest started: {manifest.id}, tenant: {ctx.tenant_id}")
+        
+        return ManifestResponse.model_validate(manifest)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Unhandled error in start_manifest: {e}")
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Warehouse not found",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal Server Error: {str(e)}"
         )
-    
-    # Check for existing OPEN manifest with same combination
-    existing_result = await db.execute(
-        select(Manifest)
-        .where(
-            Manifest.tenant_id == ctx.tenant_id,
-            Manifest.warehouse_id == request.warehouse_id,
-            Manifest.manifest_date == request.manifest_date,
-            Manifest.shift == request.shift,
-            Manifest.marketplace == request.marketplace,
-            Manifest.carrier == request.carrier,
-            Manifest.flow_type == request.flow_type,
-            Manifest.status == ManifestStatus.OPEN
-        )
-    )
-    existing = existing_result.scalar_one_or_none()
-    
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"An OPEN manifest already exists for this combination. Manifest ID: {existing.id}",
-        )
-    
-    # Create new manifest
-    manifest = Manifest(
-        tenant_id=ctx.tenant_id,
-        warehouse_id=request.warehouse_id,
-        manifest_date=request.manifest_date,
-        shift=request.shift,
-        marketplace=request.marketplace,
-        carrier=request.carrier,
-        flow_type=request.flow_type,
-        status=ManifestStatus.OPEN,
-        created_by=ctx.user_id,
-    )
-    
-    db.add(manifest)
-    await db.commit()
-    await db.refresh(manifest)
-    
-    logger.info(f"Manifest started: {manifest.id}, tenant: {ctx.tenant_id}")
-    
-    return ManifestResponse.model_validate(manifest)
 
 
 @router.post("/{manifest_id}/close", response_model=ManifestCloseResponse)
