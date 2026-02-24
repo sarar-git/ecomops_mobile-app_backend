@@ -5,8 +5,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.logging import setup_logging, get_logger
-from app.core.database import engine
+from app.core.database import engine, Base
 from app.api.v1 import router as v1_router
+from app.models import user, tenant, warehouse, manifest, scan_event  # Force models to register with Base
 
 
 # Setup logging
@@ -19,6 +20,18 @@ async def lifespan(app: FastAPI):
     """Application lifespan events."""
     logger.info("Starting Logistics Scanning API")
     logger.info(f"Debug mode: {settings.DEBUG}")
+    
+    # Failsafe: Ensure tables exist on startup
+    try:
+        logger.info("Syncing database schema (failsafe)...")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database schema sync complete.")
+    except Exception as e:
+        logger.error(f"Failsafe schema sync failed: {e}")
+        # We don't raise here to allow app to try and start, 
+        # but we've logged the error clearly.
+
     yield
     logger.info("Shutting down Logistics Scanning API")
     await engine.dispose()
