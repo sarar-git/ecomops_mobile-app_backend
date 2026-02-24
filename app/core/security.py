@@ -17,6 +17,8 @@ class TokenPayload(BaseModel):
     sub: str  # user_id
     email: Optional[str] = None
     role: Optional[str] = None # Custom claim in app_metadata
+    tenant_id: Optional[str] = None # Custom claim in app_metadata
+    warehouse_id: Optional[str] = None # Custom claim in app_metadata
     type: str = "access" # We'll default to access for Supabase tokens
     exp: datetime
     iat: datetime
@@ -93,11 +95,16 @@ def decode_token(token: str) -> Optional[TokenPayload]:
             options={"verify_aud": False} # Same as web backend configuration
         )
         
-        # Extract role from app_metadata if present
-        role = payload.get("app_metadata", {}).get("role")
-        payload["role"] = role
+        # Extract custom claims from app_metadata (common in Supabase Admin API setups)
+        # or from root if custom encoded.
+        app_meta = payload.get("app_metadata", {})
+        user_meta = payload.get("user_metadata", {})
+        
+        payload.setdefault("role", app_meta.get("role") or user_meta.get("role"))
+        payload.setdefault("tenant_id", app_meta.get("tenant_id") or user_meta.get("tenant_id"))
+        payload.setdefault("warehouse_id", app_meta.get("warehouse_id") or user_meta.get("warehouse_id"))
         
         return TokenPayload(**payload)
-    except JWTError as e:
+    except Exception as e:
         print(f"Token decode error: {e}")
         return None

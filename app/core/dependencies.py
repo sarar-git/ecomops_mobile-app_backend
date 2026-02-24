@@ -7,11 +7,13 @@ from sqlalchemy import select
 
 from app.core.database import get_db
 from app.core.security import decode_token, TokenPayload
+from app.core.logging import get_logger
 from app.models.user import User
 from app.models.tenant import Tenant
 
 
 security = HTTPBearer()
+logger = get_logger(__name__)
 
 
 async def get_current_token(
@@ -43,61 +45,89 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db),
 ) -> User:
     """Get the current authenticated user with JIT provisioning."""
-    result = await db.execute(
-        select(User).where(User.id == token.sub)
-    )
-    user = result.scalar_one_or_none()
-    
-    if user is None:
-        # JIT Provisioning: If user exists in Supabase but not locally, create it.
-        # This is safe because we've already verified the Supabase JWT.
-        from app.models.user import UserRole # Import here to avoid circular dependencies if any
-        
-        user = User(
-            id=token.sub,
-            email=token.email or token.user_metadata.get("email"),
-            role=UserRole(token.role) if token.role else UserRole.MOBILE_USER,
-            is_active=True,
-            # Passwords are not stored for Supabase users in the mobile backend
-            hashed_password="SUPABASE_AUTH" 
+    try:
+        result = await db.execute(
+            select(User).where(User.id == token.sub)
         )
-        db.add(user)
-        try:
+        user = result.scalar_one_or_none()
+        
+        if user is None:
+            # JIT Provisioning
+            from app.models.user import UserRole
+            
+            # CRITICAL: We need a tenant_id. Try to get from token, or first tenant in DB
+            tenant_id = token.tenant_id
+            if not tenant_id:
+                tenant_result = await db.execute(select(Tenant).limit(1))
+                first_tenant = tenant_result.scalar_one_or_none()
+                if not first_tenant:
+                    # Create default tenant if none exists (MVP strategy)
+                    first_tenant = Tenant(name="Default Tenant")
+                    db.add(first_tenant)
+                    await db.commit()
+                    await db.refresh(first_tenant)
+                tenant_id = first_tenant.id
+
+            user = User(
+                id=token.sub,
+                tenant_id=tenant_id,
+                email=token.email or token.user_metadata.get("email") or "unknown@ecomops.com",
+                role=UserRole(token.role) if token.role else UserRole.MOBILE_USER,
+                is_active=True,
+                hashed_password="SUPABASE_AUTH" 
+            )
+            db.add(user)
             await db.commit()
             await db.refresh(user)
-        except Exception as e:
-            await db.rollback()
+            logger.info(f"JIT Provisioned user: {user.id}, tenant: {tenant_id}")
+        
+        if not user.is_active:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to provision user: {str(e)}"
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User is inactive",
             )
-    
-    if not user.is_active:
+        
+        return user
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error in get_current_user check/provisioning: {e}")
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User is inactive",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Authentication secondary check failed: {str(e)}"
         )
-    
-    return user
 
 
 async def validate_tenant(
+    user: User = Depends(get_current_user),
     token: TokenPayload = Depends(get_current_token),
     db: AsyncSession = Depends(get_db),
 ) -> Tenant:
     """Validate that the tenant is active."""
-    result = await db.execute(
-        select(Tenant).where(Tenant.id == token.tenant_id)
-    )
-    tenant = result.scalar_one_or_none()
-    
-    if tenant is None or not tenant.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tenant not found or inactive",
+    try:
+        # User has a tenant_id locally even if JWT is missing it
+        tenant_id = token.tenant_id or user.tenant_id
+        
+        result = await db.execute(
+            select(Tenant).where(Tenant.id == tenant_id)
         )
-    
-    return tenant
+        tenant = result.scalar_one_or_none()
+        
+        if tenant is None or not tenant.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tenant not found or inactive",
+            )
+        
+        return tenant
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error in validate_tenant: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to validate tenant context"
+        )
 
 
 class TenantContext:
@@ -112,10 +142,10 @@ class TenantContext:
         self.token = token
         self.user = user
         self.tenant = tenant
-        self.tenant_id = token.tenant_id
-        self.user_id = token.sub
-        self.role = token.role
-        self.warehouse_id = token.warehouse_id
+        self.tenant_id = tenant.id
+        self.user_id = user.id
+        self.role = user.role.value if hasattr(user.role, 'value') else str(user.role)
+        self.warehouse_id = user.warehouse_id # Prioritize DB over token
 
 
 async def get_tenant_context(
