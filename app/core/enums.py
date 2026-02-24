@@ -45,6 +45,7 @@ class UserRole(str, Enum):
     ADMIN = "ADMIN"
     MANAGER = "MANAGER"
     OPERATOR = "OPERATOR"
+    MOBILE_USER = "MOBILE_USER"
 
 
 class SyncStatus(str, Enum):

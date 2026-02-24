@@ -10,6 +10,7 @@ from app.core.security import decode_token, TokenPayload
 from app.core.logging import get_logger
 from app.models.user import User
 from app.models.tenant import Tenant
+from app.models.warehouse import Warehouse
 
 
 security = HTTPBearer()
@@ -66,6 +67,17 @@ async def get_current_user(
                     db.add(first_tenant)
                     await db.commit()
                     await db.refresh(first_tenant)
+                    
+                    # Also create a default warehouse for this new tenant
+                    default_wh = Warehouse(
+                        tenant_id=first_tenant.id,
+                        name="Main Warehouse",
+                        city="Indore", # Default city
+                        address="Default Address"
+                    )
+                    db.add(default_wh)
+                    await db.commit()
+                    
                 tenant_id = first_tenant.id
 
             user = User(
@@ -80,6 +92,24 @@ async def get_current_user(
             await db.commit()
             await db.refresh(user)
             logger.info(f"JIT Provisioned user: {user.id}, tenant: {tenant_id}")
+
+        # DEFENSIVE: Ensure the tenant has at least one warehouse (for existing data)
+        # This prevents the "disabled dropdown" in the mobile app
+        wh_result = await db.execute(
+            select(Warehouse).where(Warehouse.tenant_id == user.tenant_id).limit(1)
+        )
+        if not wh_result.scalar_one_or_none():
+            logger.warning(f"Tenant {user.tenant_id} had no warehouses. Creating default.")
+            default_wh = Warehouse(
+                tenant_id=user.tenant_id,
+                name="Main Warehouse",
+                city="Indore",
+                address="Auto-provisioned"
+            )
+            db.add(default_wh)
+            await db.commit()
+            await db.refresh(user)
+            logger.info(f"Auto-provisioned Main Warehouse for existing tenant: {user.tenant_id}")
         
         if not user.is_active:
             raise HTTPException(
