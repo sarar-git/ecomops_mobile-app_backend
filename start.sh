@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 set -e  # Exit immediately on error
 
-echo "Applying database migrations..."
-# Force stamp the local version to the new version_table (alembic_version_mobile)
-alembic stamp 001_initial_schema
+# Apply database migrations
+# IMPORTANT: Removed 'alembic stamp' which was skipping table creation
 alembic upgrade head
 
 echo "Starting application..."
