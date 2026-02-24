@@ -135,7 +135,14 @@ async def bulk_create_scan_events(
             ))
             error_count += 1
     
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception as e:
+        logger.exception(f"Failed to commit bulk scan events: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database commit failed: {type(e).__name__}: {str(e)}"
+        )
     
     logger.info(
         f"Bulk scan: received={len(request.events)}, inserted={inserted_count}, "

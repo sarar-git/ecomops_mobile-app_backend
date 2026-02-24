@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.logging import setup_logging, get_logger
+from sqlalchemy import text, inspect
 from app.core.database import engine, Base
 from app.api.v1 import router as v1_router
 from app.models import user, tenant, warehouse, manifest, scan_event  # Force models to register with Base
@@ -23,14 +24,44 @@ async def lifespan(app: FastAPI):
     
     # Failsafe: Ensure tables exist on startup
     try:
-        logger.info("Syncing database schema (failsafe)...")
+        logger.info("Checking database schema integrity...")
         async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database schema sync complete.")
+            # 1. Check if 'users' table exists
+            def has_users_table(sync_conn):
+                return inspect(sync_conn).has_table("users")
+            
+            has_users = await conn.run_sync(has_users_table)
+            
+            if not has_users:
+                logger.warning("relation 'users' does not exist! Attempting self-healing...")
+                
+                # 2. Check for stale alembic marker
+                def has_alembic_marker(sync_conn):
+                    return inspect(sync_conn).has_table("alembic_version_mobile")
+                
+                has_marker = await conn.run_sync(has_alembic_marker)
+                if has_marker:
+                    logger.info("Stale alembic marker found. Clearing to allow re-migration.")
+                    await conn.execute(text("DROP TABLE alembic_version_mobile"))
+
+                # 3. Create Tables
+                logger.info("Running metadata.create_all (failsafe)...")
+                try:
+                    await conn.run_sync(Base.metadata.create_all)
+                except Exception as sync_err:
+                    # Specific handling for Enum collisions (pg_type_typname_nsp_index)
+                    if "already exists" in str(sync_err).lower():
+                        logger.info(f"Schema sync encountered existing types: {sync_err}. Continuing...")
+                    else:
+                        raise sync_err
+                
+                logger.info("Self-healing complete. Schema should now be valid.")
+            else:
+                logger.info("Database integrity check passed.")
+
     except Exception as e:
-        logger.error(f"Failsafe schema sync failed: {e}")
-        # We don't raise here to allow app to try and start, 
-        # but we've logged the error clearly.
+        logger.error(f"Failsafe setup failed: {e}")
+        # Not raising here to prevent boot-loop if DB is reachable but slightly weird
 
     yield
     logger.info("Shutting down Logistics Scanning API")

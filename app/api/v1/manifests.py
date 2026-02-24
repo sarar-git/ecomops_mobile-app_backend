@@ -95,9 +95,13 @@ async def start_manifest(
         raise
     except Exception as e:
         logger.exception(f"Unhandled error in start_manifest: {e}")
+        error_msg = f"{type(e).__name__}: {str(e)}"
+        if "relation \"users\"" in error_msg.lower():
+            error_msg += " (Probable database sync failure - check Render logs for 'Self-Healing' status)"
+        
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal Server Error: {str(e)}"
+            detail=f"Failed to start manifest: {error_msg}"
         )
 
 
@@ -129,29 +133,36 @@ async def close_manifest(
             detail="Manifest is already closed",
         )
     
-    # Count total packets
-    count_result = await db.execute(
-        select(func.count(ScanEvent.id))
-        .where(ScanEvent.manifest_id == manifest_id)
-    )
-    total_packets = count_result.scalar() or 0
-    
-    # Close the manifest
-    manifest.status = ManifestStatus.CLOSED
-    manifest.closed_at_utc = datetime.now(timezone.utc)
-    manifest.total_packets = total_packets
-    
-    await db.commit()
-    await db.refresh(manifest)
-    
-    logger.info(f"Manifest closed: {manifest_id}, packets: {total_packets}")
-    
-    return ManifestCloseResponse(
-        id=manifest.id,
-        status=manifest.status,
-        closed_at_utc=manifest.closed_at_utc,
-        total_packets=manifest.total_packets,
-    )
+    try:
+        # Count total packets
+        count_result = await db.execute(
+            select(func.count(ScanEvent.id))
+            .where(ScanEvent.manifest_id == manifest_id)
+        )
+        total_packets = count_result.scalar() or 0
+        
+        # Close the manifest
+        manifest.status = ManifestStatus.CLOSED
+        manifest.closed_at_utc = datetime.now(timezone.utc)
+        manifest.total_packets = total_packets
+        
+        await db.commit()
+        await db.refresh(manifest)
+        
+        logger.info(f"Manifest closed: {manifest_id}, packets: {total_packets}")
+        
+        return ManifestCloseResponse(
+            id=manifest.id,
+            status=manifest.status,
+            closed_at_utc=manifest.closed_at_utc,
+            total_packets=manifest.total_packets,
+        )
+    except Exception as e:
+        logger.exception(f"Error closing manifest {manifest_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to close manifest: {type(e).__name__}: {str(e)}"
+        )
 
 
 @router.get("", response_model=ManifestListResponse)
