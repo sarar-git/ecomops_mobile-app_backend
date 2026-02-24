@@ -46,6 +46,7 @@ class UserRole(str, Enum):
     MANAGER = "MANAGER"
     OPERATOR = "OPERATOR"
     MOBILE_USER = "MOBILE_USER"
+    AUTHENTICATED = "authenticated"  # Supabase default role
 
 
 class SyncStatus(str, Enum):

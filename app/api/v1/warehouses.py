@@ -17,14 +17,23 @@ async def list_warehouses(
     db: DbSession,
 ):
     """List all warehouses for the current tenant."""
-    result = await db.execute(
-        select(Warehouse)
-        .where(Warehouse.tenant_id == ctx.tenant_id)
-        .order_by(Warehouse.name)
-    )
-    warehouses = result.scalars().all()
-    
-    return [WarehouseResponse.model_validate(w) for w in warehouses]
+    try:
+        result = await db.execute(
+            select(Warehouse)
+            .where(Warehouse.tenant_id == ctx.tenant_id)
+            .order_by(Warehouse.name)
+        )
+        warehouses = result.scalars().all()
+        
+        return [WarehouseResponse.model_validate(w) for w in warehouses]
+    except Exception as e:
+        from app.core.logging import get_logger
+        logger = get_logger(__name__)
+        logger.exception(f"Error listing warehouses: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list warehouses: {type(e).__name__}: {str(e)}"
+        )
 
 
 @router.get("/{warehouse_id}", response_model=WarehouseResponse)

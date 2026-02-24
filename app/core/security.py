@@ -19,11 +19,16 @@ class TokenPayload(BaseModel):
     role: Optional[str] = None # Custom claim in app_metadata
     tenant_id: Optional[str] = None # Custom claim in app_metadata
     warehouse_id: Optional[str] = None # Custom claim in app_metadata
-    type: str = "access" # We'll default to access for Supabase tokens
+    type: Optional[str] = "access" 
     exp: datetime
     iat: datetime
+    aud: Optional[str] = None
+    iss: Optional[str] = None
     app_metadata: dict = {}
     user_metadata: dict = {}
+
+    class Config:
+        extra = "allow"
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

@@ -24,8 +24,8 @@ class WarehouseResponse(BaseModel):
     name: str
     city: str
     address: Optional[str] = None
-    timezone: str
-    created_at: datetime
+    timezone: Optional[str] = "Asia/Kolkata"
+    created_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True
