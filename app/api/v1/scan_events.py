@@ -237,31 +237,6 @@ async def list_scan_events(
     )
 
 
-@router.get("/{scan_event_id}", response_model=ScanEventResponse)
-async def get_scan_event(
-    scan_event_id: str,
-    ctx: TenantCtx,
-    db: DbSession,
-):
-    """Get a specific scan event by ID."""
-    result = await db.execute(
-        select(ScanEvent)
-        .where(
-            ScanEvent.id == scan_event_id,
-            ScanEvent.tenant_id == ctx.tenant_id
-        )
-    )
-    event = result.scalar_one_or_none()
-    
-    if event is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Scan event not found",
-        )
-    
-    return ScanEventResponse.model_validate(event)
-
-
 @router.get("/me", response_model=ScanEventListResponse)
 async def list_my_scan_events(
     ctx: TenantCtx,
@@ -298,3 +273,28 @@ async def list_my_scan_events(
         events=[ScanEventResponse.model_validate(e) for e in events],
         total=total,
     )
+
+
+@router.get("/{scan_event_id}", response_model=ScanEventResponse)
+async def get_scan_event(
+    scan_event_id: str,
+    ctx: TenantCtx,
+    db: DbSession,
+):
+    """Get a specific scan event by ID."""
+    result = await db.execute(
+        select(ScanEvent)
+        .where(
+            ScanEvent.id == scan_event_id,
+            ScanEvent.tenant_id == ctx.tenant_id
+        )
+    )
+    event = result.scalar_one_or_none()
+    
+    if event is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Scan event not found",
+        )
+    
+    return ScanEventResponse.model_validate(event)

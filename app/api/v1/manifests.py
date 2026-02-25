@@ -31,7 +31,7 @@ async def start_manifest(
     ctx: TenantCtx,
     db: DbSession,
 ):
-    """Start a new manifest. Only one OPEN manifest allowed per unique combination."""
+    """Start a new manifest or resume an existing OPEN one."""
     try:
         # Verify warehouse belongs to tenant
         warehouse_result = await db.execute(
@@ -44,9 +44,10 @@ async def start_manifest(
         warehouse = warehouse_result.scalar_one_or_none()
         
         if warehouse is None:
+            # Shift to 400 to distinguish from route 404 (shadowing)
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Warehouse not found",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Selected warehouse '{request.warehouse_id}' not found for your tenant.",
             )
         
         # Check for existing OPEN manifest with same combination
@@ -66,10 +67,8 @@ async def start_manifest(
         existing = existing_result.scalar_one_or_none()
         
         if existing:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"An OPEN manifest already exists for this combination. Manifest ID: {existing.id}",
-            )
+            logger.info(f"Resuming existing manifest: {existing.id} for user {ctx.user_id}")
+            return ManifestResponse.model_validate(existing)
         
         # Create new manifest
         manifest = Manifest(
@@ -96,9 +95,6 @@ async def start_manifest(
     except Exception as e:
         logger.exception(f"Unhandled error in start_manifest: {e}")
         error_msg = f"{type(e).__name__}: {str(e)}"
-        if "relation \"users\"" in error_msg.lower():
-            error_msg += " (Probable database sync failure - check Render logs for 'Self-Healing' status)"
-        
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to start manifest: {error_msg}"
