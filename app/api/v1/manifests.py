@@ -84,10 +84,13 @@ async def start_manifest(
         )
         
         db.add(manifest)
-        await db.commit()
-        await db.refresh(manifest)
         
-        logger.info(f"Manifest started: {manifest.id}, tenant: {ctx.tenant_id}")
+        import time
+        start_time = time.time()
+        await db.commit()
+        commit_duration = time.time() - start_time
+        
+        logger.info(f"Manifest started: {manifest.id}, tenant: {ctx.tenant_id} (commit took {commit_duration:.2f}s)")
         
         return ManifestResponse.model_validate(manifest)
     except HTTPException:
@@ -142,10 +145,12 @@ async def close_manifest(
         manifest.closed_at_utc = datetime.now(timezone.utc)
         manifest.total_packets = total_packets
         
+        import time
+        start_time = time.time()
         await db.commit()
-        await db.refresh(manifest)
+        commit_duration = time.time() - start_time
         
-        logger.info(f"Manifest closed: {manifest_id}, packets: {total_packets}")
+        logger.info(f"Manifest closed: {manifest_id}, packets: {total_packets} (commit took {commit_duration:.2f}s)")
         
         return ManifestCloseResponse(
             id=manifest.id,

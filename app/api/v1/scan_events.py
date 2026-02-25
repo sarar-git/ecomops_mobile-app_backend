@@ -136,7 +136,11 @@ async def bulk_create_scan_events(
             error_count += 1
     
     try:
+        import time
+        start_time = time.time()
         await db.commit()
+        commit_duration = time.time() - start_time
+        
         # Trigger Bridge Sync to Main Backend
         try:
             from app.core.bridge import BridgeService
@@ -164,6 +168,8 @@ async def bulk_create_scan_events(
                 ]
             }
             await BridgeService.sync_batch_to_main_backend(batch_data, ctx.tenant_id)
+            bridge_duration = time.time() - start_time - commit_duration
+            logger.info(f"Bulk scan committed (took {commit_duration:.2f}s) and bridged (took {bridge_duration:.2f}s)")
         except Exception as bridge_err:
             logger.error(f"Bridge sync failed but local commit succeeded: {bridge_err}")
             

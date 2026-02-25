@@ -66,13 +66,12 @@ async def get_current_user(
                     first_tenant = Tenant(name="Default Tenant")
                     db.add(first_tenant)
                     await db.commit()
-                    await db.refresh(first_tenant)
                     
                     # Also create a default warehouse for this new tenant
                     default_wh = Warehouse(
                         tenant_id=first_tenant.id,
                         name="Main Warehouse",
-                        city="Indore", # Default city
+                        city="Indore",
                         address="Default Address"
                     )
                     db.add(default_wh)
@@ -81,7 +80,6 @@ async def get_current_user(
                 tenant_id = first_tenant.id
 
             # Safe Role Selection
-            # Fallback if the token role isn't in our enum (e.g. 'authenticated')
             target_role = UserRole.MOBILE_USER
             if token.role:
                 try:
@@ -99,15 +97,14 @@ async def get_current_user(
             )
             db.add(user)
             await db.commit()
-            await db.refresh(user)
-            logger.info(f"JIT Provisioned user: {user.id}, tenant: {tenant_id}, role: {target_role}")
+            logger.info(f"JIT Provisioned user: {user.id}, tenant: {tenant_id}")
 
-        # DEFENSIVE: Ensure the tenant has at least one warehouse (for existing data)
-        # This prevents the "disabled dropdown" in the mobile app
-        wh_result = await db.execute(
-            select(Warehouse).where(Warehouse.tenant_id == user.tenant_id).limit(1)
+        # DEFENSIVE: Ensure the tenant has at least one warehouse
+        # This prevents the "disabled dropdown" in the mobile app.
+        wh_check = await db.execute(
+            select(Warehouse.id).where(Warehouse.tenant_id == user.tenant_id).limit(1)
         )
-        if not wh_result.scalar_one_or_none():
+        if not wh_check.scalar():
             logger.warning(f"Tenant {user.tenant_id} had no warehouses. Creating default.")
             default_wh = Warehouse(
                 tenant_id=user.tenant_id,
@@ -117,8 +114,6 @@ async def get_current_user(
             )
             db.add(default_wh)
             await db.commit()
-            await db.refresh(user)
-            logger.info(f"Auto-provisioned Main Warehouse for existing tenant: {user.tenant_id}")
         
         if not user.is_active:
             raise HTTPException(
@@ -131,7 +126,6 @@ async def get_current_user(
         raise
     except Exception as e:
         logger.exception(f"Error in get_current_user check/provisioning: {e}")
-        # Return clearer message in detail for debugging 500s
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Authentication secondary check failed: {type(e).__name__}: {str(e)}"
