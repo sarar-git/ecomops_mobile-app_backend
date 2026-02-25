@@ -137,6 +137,36 @@ async def bulk_create_scan_events(
     
     try:
         await db.commit()
+        # Trigger Bridge Sync to Main Backend
+        try:
+            from app.core.bridge import BridgeService
+            # Get user email for better attribution in main backend
+            user_email = ctx.user_email if hasattr(ctx, 'user_email') else "mobile_user"
+            
+            batch_data = {
+                "batch_id": f"bulk-{server_timestamp.strftime('%Y%m%d%H%M%S')}-{ctx.user_id[:8]}",
+                "batch_name": f"Mobile Bulk Sync - {server_timestamp.strftime('%H:%M')}",
+                "scan_type": manifests[list(manifest_ids)[0]].flow_type.value if manifest_ids else "DISPATCH",
+                "total_scans": len(request.events),
+                "inserted_scans": inserted_count,
+                "created_at": server_timestamp.isoformat(),
+                "operator_email": user_email,
+                "scans": [
+                    {
+                        "scan_code": e.barcode_value,
+                        "timestamp": server_timestamp.isoformat(),
+                        "meta_data": {
+                            "packer": user_email,
+                            "manifest_id": e.manifest_id,
+                            "device": e.device_id
+                        }
+                    } for e in request.events
+                ]
+            }
+            await BridgeService.sync_batch_to_main_backend(batch_data, ctx.tenant_id)
+        except Exception as bridge_err:
+            logger.error(f"Bridge sync failed but local commit succeeded: {bridge_err}")
+            
     except Exception as e:
         logger.exception(f"Failed to commit bulk scan events: {e}")
         raise HTTPException(
@@ -230,3 +260,41 @@ async def get_scan_event(
         )
     
     return ScanEventResponse.model_validate(event)
+
+
+@router.get("/me", response_model=ScanEventListResponse)
+async def list_my_scan_events(
+    ctx: TenantCtx,
+    db: DbSession,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+):
+    """List scan events for the current operator across all manifests."""
+    # Count total
+    count_result = await db.execute(
+        select(func.count(ScanEvent.id))
+        .where(
+            ScanEvent.operator_id == ctx.user_id,
+            ScanEvent.tenant_id == ctx.tenant_id
+        )
+    )
+    total = count_result.scalar() or 0
+    
+    # Get events with pagination
+    offset = (page - 1) * page_size
+    events_result = await db.execute(
+        select(ScanEvent)
+        .where(
+            ScanEvent.operator_id == ctx.user_id,
+            ScanEvent.tenant_id == ctx.tenant_id
+        )
+        .order_by(ScanEvent.scanned_at_utc.desc())
+        .offset(offset)
+        .limit(page_size)
+    )
+    events = events_result.scalars().all()
+    
+    return ScanEventListResponse(
+        events=[ScanEventResponse.model_validate(e) for e in events],
+        total=total,
+    )
