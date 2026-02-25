@@ -22,34 +22,52 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Logistics Scanning API")
     logger.info(f"Debug mode: {settings.DEBUG}")
     
-    # Failsafe: Ensure tables exist on startup
+    # Failsafe: Ensure tables exist on startup and have correct columns
     try:
         logger.info("Checking database schema integrity...")
         async with engine.begin() as conn:
-            # 1. Check if 'users' table exists
-            def has_users_table(sync_conn):
-                return inspect(sync_conn).has_table("users")
-            
-            has_users = await conn.run_sync(has_users_table)
-            
-            if not has_users:
-                logger.warning("relation 'users' does not exist! Attempting self-healing...")
+            def verify_integrity(sync_conn):
+                inspector = inspect(sync_conn)
+                existing_tables = inspector.get_table_names()
                 
-                # 2. Check for stale alembic marker
-                def has_alembic_marker(sync_conn):
-                    return inspect(sync_conn).has_table("alembic_version_mobile")
+                # Check for critical manifest_id column in scan_events
+                if "scan_events" in existing_tables:
+                    columns = [c["name"] for c in inspector.get_columns("scan_events")]
+                    if "manifest_id" not in columns:
+                        logger.error("DANGER: 'scan_events' table is missing 'manifest_id' column!")
+                        return "REPAIR_SCANS"
                 
-                has_marker = await conn.run_sync(has_alembic_marker)
-                if has_marker:
-                    logger.info("Stale alembic marker found. Clearing to allow re-migration.")
-                    await conn.execute(text("DROP TABLE alembic_version_mobile"))
+                # Check if basic tables exist
+                required_tables = ["users", "tenants", "warehouses", "manifests", "scan_events"]
+                missing = [t for t in required_tables if t not in existing_tables]
+                if missing:
+                    logger.warning(f"Missing tables: {missing}")
+                    return "SYNC_REQUIRED"
+                
+                return "OK"
+            
+            integrity_status = await conn.run_sync(verify_integrity)
+            
+            if integrity_status != "OK":
+                logger.warning(f"Integrity check failed ({integrity_status}). Attempting self-healing...")
+                
+                if integrity_status == "REPAIR_SCANS":
+                    logger.info("Dropping broken 'scan_events' table...")
+                    await conn.execute(text("DROP TABLE IF EXISTS scan_events"))
+                
+                # Clear alembic marker to force a "fresh" start if critical tables missing
+                if integrity_status in ["SYNC_REQUIRED", "REPAIR_SCANS"]:
+                    try:
+                        await conn.execute(text("DROP TABLE IF EXISTS alembic_version_mobile"))
+                        logger.info("Cleared alembic_version_mobile to force clean migration.")
+                    except Exception as e:
+                        logger.warning(f"Could not clear alembic marker: {e}")
 
-                # 3. Create Tables
+                # Run metadata.create_all
                 logger.info("Running metadata.create_all (failsafe)...")
                 try:
                     await conn.run_sync(Base.metadata.create_all)
                 except Exception as sync_err:
-                    # Specific handling for Enum collisions (pg_type_typname_nsp_index)
                     if "already exists" in str(sync_err).lower():
                         logger.info(f"Schema sync encountered existing types: {sync_err}. Continuing...")
                     else:
