@@ -2,22 +2,47 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.enums import FlowType, Marketplace, Carrier, BarcodeType, SyncStatus
 
 
+from typing import Optional, List, Union, Any
+
 class ScanEventCreate(BaseModel):
     """Schema for creating a single scan event."""
     manifest_id: str
-    barcode_value: str = Field(..., min_length=1, max_length=500)
-    barcode_type: BarcodeType = BarcodeType.UNKNOWN
+    barcode_value: str
+    barcode_type: Any = "UNKNOWN"
     ocr_raw_text: Optional[str] = None
     extracted_order_id: Optional[str] = None
     extracted_awb: Optional[str] = None
-    scanned_at_local: Optional[datetime] = None
+    scanned_at_local: Any = None
     device_id: Optional[str] = None
-    confidence_score: Optional[Decimal] = Field(None, ge=0, le=1)
+    confidence_score: Any = None
+
+    class Config:
+        extra = "ignore"
+
+    @field_validator("barcode_type", mode="before")
+    @classmethod
+    def validate_barcode_type(cls, v: Any) -> str:
+        if not v: return "UNKNOWN"
+        v_str = str(v).upper()
+        if "QR" in v_str: return "QR"
+        if "128" in v_str: return "CODE128"
+        if "39" in v_str: return "CODE39"
+        if "EAN13" in v_str: return "EAN13"
+        return v_str if v_str in ["QR", "CODE128", "CODE39", "EAN13", "UNKNOWN"] else "UNKNOWN"
+
+    @field_validator("scanned_at_local", mode="before")
+    @classmethod
+    def validate_scanned_at(cls, v: Any) -> Optional[datetime]:
+        if not v: return None
+        if isinstance(v, datetime): return v
+        try:
+            return datetime.fromisoformat(str(v).replace('Z', '+00:00'))
+        except: return None
 
 
 class ScanEventBulkRequest(BaseModel):

@@ -102,6 +102,20 @@ app.add_middleware(
 app.include_router(v1_router, prefix="/api")
 
 
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    """Log validation errors for debugging 422s."""
+    logger.error(f"Validation error: {exc.errors()}")
+    logger.error(f"Failed body: {await request.body()}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": str(await request.body())},
+    )
+
+
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint."""
