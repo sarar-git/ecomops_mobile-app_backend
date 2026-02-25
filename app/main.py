@@ -48,32 +48,24 @@ async def lifespan(app: FastAPI):
             
             integrity_status = await conn.run_sync(verify_integrity)
             
-            if integrity_status != "OK":
-                logger.warning(f"Integrity check failed ({integrity_status}). Attempting self-healing...")
+            if integrity_status == "REPAIR_SCANS":
+                logger.warning("Integrity check failed (REPAIR_SCANS). Attempting surgical repair of internal table...")
+                logger.info("Dropping broken 'scan_events' table...")
+                await conn.execute(text("DROP TABLE IF EXISTS scan_events"))
                 
-                if integrity_status == "REPAIR_SCANS":
-                    logger.info("Dropping broken 'scan_events' table...")
-                    await conn.execute(text("DROP TABLE IF EXISTS scan_events"))
-                
-                # Clear alembic marker to force a "fresh" start if critical tables missing
-                if integrity_status in ["SYNC_REQUIRED", "REPAIR_SCANS"]:
-                    try:
-                        await conn.execute(text("DROP TABLE IF EXISTS alembic_version_mobile"))
-                        logger.info("Cleared alembic_version_mobile to force clean migration.")
-                    except Exception as e:
-                        logger.warning(f"Could not clear alembic marker: {e}")
-
-                # Run metadata.create_all
-                logger.info("Running metadata.create_all (failsafe)...")
                 try:
-                    await conn.run_sync(Base.metadata.create_all)
-                except Exception as sync_err:
-                    if "already exists" in str(sync_err).lower():
-                        logger.info(f"Schema sync encountered existing types: {sync_err}. Continuing...")
-                    else:
-                        raise sync_err
-                
-                logger.info("Self-healing complete. Schema should now be valid.")
+                    await conn.execute(text("DROP TABLE IF EXISTS alembic_version_mobile"))
+                    logger.info("Cleared alembic_version_mobile to force clean migration.")
+                except Exception as e:
+                    logger.warning(f"Could not clear alembic marker: {e}")
+
+                # Note: We do NOT run create_all here anymore. 
+                # Instead, we rely on the next alembic migration or manual repair
+                # to avoid wiping shared tables like 'users' or 'profiles'.
+                logger.info("Internal repair command sent. Please restart or check Alembic logs.")
+            elif integrity_status == "SYNC_REQUIRED":
+                logger.error("DANGER: Database is missing critical tables! Mobile app may not function.")
+                logger.info("Please run migrations from the main backend or check DATABASE_URL.")
             else:
                 logger.info("Database integrity check passed.")
 
