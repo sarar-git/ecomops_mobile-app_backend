@@ -1,9 +1,9 @@
 """Application dependencies for dependency injection."""
 from typing import Annotated, Optional
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 
 from app.core.database import get_db
 from app.core.security import decode_token, TokenPayload
@@ -45,10 +45,13 @@ async def get_current_user(
     token: TokenPayload = Depends(get_current_token),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Get the current authenticated user with JIT provisioning."""
+    """Get the current authenticated user with JIT provisioning and optimized loading."""
     try:
+        # Optimized query with joinedload for Tenant and Warehouse
         result = await db.execute(
-            select(User).where(User.id == token.sub)
+            select(User)
+            .options(joinedload(User.tenant), joinedload(User.warehouse))
+            .where(User.id == token.sub)
         )
         user = result.scalar_one_or_none()
         
@@ -97,14 +100,18 @@ async def get_current_user(
             )
             db.add(user)
             await db.commit()
+            
+            # Refresh to load relationships after JIT
+            result = await db.execute(
+                select(User)
+                .options(joinedload(User.tenant), joinedload(User.warehouse))
+                .where(User.id == user.id)
+            )
+            user = result.scalar_one()
             logger.info(f"JIT Provisioned user: {user.id}, tenant: {tenant_id}")
 
         # DEFENSIVE: Ensure the tenant has at least one warehouse
-        # This prevents the "disabled dropdown" in the mobile app.
-        wh_check = await db.execute(
-            select(Warehouse.id).where(Warehouse.tenant_id == user.tenant_id).limit(1)
-        )
-        if not wh_check.scalar():
+        if user.tenant and not await db.execute(select(Warehouse.id).where(Warehouse.tenant_id == user.tenant_id).limit(1)):
             logger.warning(f"Tenant {user.tenant_id} had no warehouses. Creating default.")
             default_wh = Warehouse(
                 tenant_id=user.tenant_id,
@@ -114,6 +121,7 @@ async def get_current_user(
             )
             db.add(default_wh)
             await db.commit()
+            # No need to refresh again here unless logic depends strictly on user.warehouse being populated immediately
         
         if not user.is_active:
             raise HTTPException(
@@ -134,34 +142,21 @@ async def get_current_user(
 
 async def validate_tenant(
     user: User = Depends(get_current_user),
-    token: TokenPayload = Depends(get_current_token),
-    db: AsyncSession = Depends(get_db),
 ) -> Tenant:
-    """Validate that the tenant is active."""
-    try:
-        # User has a tenant_id locally even if JWT is missing it
-        tenant_id = token.tenant_id or user.tenant_id
-        
-        result = await db.execute(
-            select(Tenant).where(Tenant.id == tenant_id)
-        )
-        tenant = result.scalar_one_or_none()
-        
-        if tenant is None or not tenant.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Tenant not found or inactive",
-            )
-        
-        return tenant
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Error in validate_tenant: {e}")
+    """Validate that the tenant is active (Optimized: uses pre-fetched tenant)."""
+    if user.tenant is None:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to validate tenant context"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant association missing",
         )
+    
+    if not user.tenant.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant is inactive",
+        )
+    
+    return user.tenant
 
 
 class TenantContext:
@@ -178,6 +173,7 @@ class TenantContext:
         self.tenant = tenant
         self.tenant_id = tenant.id
         self.user_id = user.id
+        self.user_email = user.email
         self.role = user.role.value if hasattr(user.role, 'value') else str(user.role)
         self.warehouse_id = user.warehouse_id # Prioritize DB over token
 

@@ -145,7 +145,7 @@ async def bulk_create_scan_events(
         try:
             from app.core.bridge import BridgeService
             # Get user email for better attribution in main backend
-            user_email = ctx.user_email if hasattr(ctx, 'user_email') else "mobile_user"
+            user_email = ctx.user_email
             
             batch_data = {
                 "batch_id": f"bulk-{server_timestamp.strftime('%Y%m%d%H%M%S')}-{ctx.user_id[:8]}",
