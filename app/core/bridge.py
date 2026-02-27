@@ -23,9 +23,11 @@ class BridgeService:
 
         async with httpx.AsyncClient() as client:
             try:
-                response = await client.post(url, json=batch_data, headers=headers, timeout=10.0)
-                response.raise_for_status()
+                response = await client.post(url, json=batch_data, headers=headers, timeout=15.0)
+                if response.is_error:
+                    logger.error(f"Sync failed with status {response.status_code}: {response.text}")
+                    response.raise_for_status()
+                
                 logger.info(f"Successfully synced batch {batch_data.get('batch_id')} to main backend.")
-            except Exception as e:
-                logger.error(f"Failed to sync batch to main backend: {str(e)}")
-                # TODO: Implement retry logic (Celery/Redis)
+            except Exception:
+                logger.exception("Failed to sync batch to main backend")
