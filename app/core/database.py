@@ -55,14 +55,15 @@ if database_url.startswith("sqlite"):
     )
 else:
     # Render-specific optimization: Disable prepared statements if using pgbouncer
-    # This prevents 'prepared statement "_pg3_0" does not exist' errors
-    engine_kwargs["connect_args"] = {"prepare_threshold": 0}
+    # Setting to None (not 0) disables them in psycopg 3.
+    engine_kwargs["connect_args"] = {"prepare_threshold": None}
     
     engine = create_async_engine(
         database_url,
         pool_size=settings.DATABASE_POOL_SIZE,
         max_overflow=settings.DATABASE_MAX_OVERFLOW,
         pool_recycle=1800,      # Recycle connections every 30 min
+        statement_cache_size=0, # Extra safety for pgbouncer
         **engine_kwargs,
     )
 
