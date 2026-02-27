@@ -54,6 +54,10 @@ if database_url.startswith("sqlite"):
         **engine_kwargs,
     )
 else:
+    # Render-specific optimization: Disable prepared statements if using pgbouncer
+    # This prevents 'prepared statement "_pg3_0" does not exist' errors
+    engine_kwargs["connect_args"] = {"prepare_threshold": 0}
+    
     engine = create_async_engine(
         database_url,
         pool_size=settings.DATABASE_POOL_SIZE,

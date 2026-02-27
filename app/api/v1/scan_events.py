@@ -147,10 +147,14 @@ async def bulk_create_scan_events(
         # Get user email for better attribution in main backend
         user_email = ctx.user_email
         
+        # Get the first available valid manifest to determine scan_type for the bridge
+        valid_manifests = list(manifests.values())
+        scan_type = valid_manifests[0].flow_type.value if valid_manifests else "DISPATCH"
+        
         batch_data = {
             "batch_id": f"bulk-{server_timestamp.strftime('%Y%m%d%H%M%S')}-{ctx.user_id[:8]}",
             "batch_name": f"Mobile Bulk Sync - {server_timestamp.strftime('%H:%M')}",
-            "scan_type": manifests[list(manifest_ids)[0]].flow_type.value if manifest_ids else "DISPATCH",
+            "scan_type": scan_type,
             "total_scans": len(request.events),
             "inserted_scans": inserted_count,
             "created_at": server_timestamp.isoformat(),
