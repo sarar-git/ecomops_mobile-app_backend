@@ -37,12 +37,12 @@ async def test_start_manifest_success(
 
 
 @pytest.mark.asyncio
-async def test_start_manifest_duplicate_open(
+async def test_start_manifest_resume_existing(
     client: AsyncClient,
     auth_headers: dict,
     test_warehouse,
 ):
-    """Test that duplicate OPEN manifests are rejected."""
+    """Test that duplicate OPEN manifests resume the existing one."""
     manifest_data = {
         "warehouse_id": test_warehouse.id,
         "manifest_date": str(date.today()),
@@ -59,15 +59,17 @@ async def test_start_manifest_duplicate_open(
         json=manifest_data
     )
     assert response1.status_code == 201
+    manifest_id1 = response1.json()["id"]
     
-    # Second manifest with same params should fail
+    # Second manifest with same params should resume (return 201 and same ID)
     response2 = await client.post(
         "/api/v1/manifests/start",
         headers=auth_headers,
         json=manifest_data
     )
-    assert response2.status_code == 409
-    assert "OPEN manifest already exists" in response2.json()["detail"]
+    assert response2.status_code == 201
+    manifest_id2 = response2.json()["id"]
+    assert manifest_id1 == manifest_id2
 
 
 @pytest.mark.asyncio
