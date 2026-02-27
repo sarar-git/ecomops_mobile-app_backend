@@ -2,11 +2,19 @@
 set -e  # Exit immediately on error
 
 # Apply database migrations
-# Apply database migrations
-echo "Running alembic upgrade head..."
-alembic upgrade head
+echo "🔍 Checking environment configuration..."
+if [ -z "$DATABASE_URL" ]; then
+    echo "❌ ERROR: DATABASE_URL is not set! Please add it to your Render Environment Variables."
+    exit 1
+fi
 
-echo "Starting application..."
+echo "🚀 Running database migrations (alembic upgrade head)..."
+if ! alembic upgrade head; then
+    echo "❌ ERROR: Database migrations failed. This usually means the database connection string is wrong or the database is unreachable."
+    exit 1
+fi
+
+echo "✅ Migrations complete. Starting application with Gunicorn..."
 exec gunicorn app.main:app \
   -k uvicorn.workers.UvicornWorker \
   -w 2 \
