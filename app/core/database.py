@@ -56,8 +56,8 @@ if database_url.startswith("sqlite"):
     )
 else:
     # Render-specific optimization: Use NullPool when pgbouncer is used in Transaction Mode.
-    # Also disable server-side prepared statements in psycopg 3.
-    engine_kwargs["connect_args"] = {"prepare_threshold": 0}
+    # Setting to None (not 0) disables them in psycopg 3.
+    engine_kwargs["connect_args"] = {"prepare_threshold": None}
     
     engine = create_async_engine(
         database_url,
