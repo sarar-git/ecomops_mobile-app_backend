@@ -1,7 +1,7 @@
 """Scan Events API endpoints."""
 from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, HTTPException, status, Query
+from fastapi import APIRouter, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy import select, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -23,6 +23,7 @@ logger = get_logger(__name__)
 @router.post("/bulk", response_model=BulkScanResponse, status_code=status.HTTP_201_CREATED)
 async def bulk_create_scan_events(
     request: ScanEventBulkRequest,
+    background_tasks: BackgroundTasks,
     ctx: TenantCtx,
     db: DbSession,
 ):
@@ -142,36 +143,39 @@ async def bulk_create_scan_events(
         commit_duration = time.time() - start_time
         
         # Trigger Bridge Sync to Main Backend
-        try:
-            from app.core.bridge import BridgeService
-            # Get user email for better attribution in main backend
-            user_email = ctx.user_email
-            
-            batch_data = {
-                "batch_id": f"bulk-{server_timestamp.strftime('%Y%m%d%H%M%S')}-{ctx.user_id[:8]}",
-                "batch_name": f"Mobile Bulk Sync - {server_timestamp.strftime('%H:%M')}",
-                "scan_type": manifests[list(manifest_ids)[0]].flow_type.value if manifest_ids else "DISPATCH",
-                "total_scans": len(request.events),
-                "inserted_scans": inserted_count,
-                "created_at": server_timestamp.isoformat(),
-                "operator_email": user_email,
-                "scans": [
-                    {
-                        "scan_code": e.barcode_value,
-                        "timestamp": server_timestamp.isoformat(),
-                        "meta_data": {
-                            "packer": user_email,
-                            "manifest_id": e.manifest_id,
-                            "device": e.device_id
-                        }
-                    } for e in request.events
-                ]
-            }
-            await BridgeService.sync_batch_to_main_backend(batch_data, ctx.tenant_id)
-            bridge_duration = time.time() - start_time - commit_duration
-            logger.info(f"Bulk scan committed (took {commit_duration:.2f}s) and bridged (took {bridge_duration:.2f}s)")
-        except Exception as bridge_err:
-            logger.error(f"Bridge sync failed but local commit succeeded: {bridge_err}")
+        from app.core.bridge import BridgeService
+        # Get user email for better attribution in main backend
+        user_email = ctx.user_email
+        
+        batch_data = {
+            "batch_id": f"bulk-{server_timestamp.strftime('%Y%m%d%H%M%S')}-{ctx.user_id[:8]}",
+            "batch_name": f"Mobile Bulk Sync - {server_timestamp.strftime('%H:%M')}",
+            "scan_type": manifests[list(manifest_ids)[0]].flow_type.value if manifest_ids else "DISPATCH",
+            "total_scans": len(request.events),
+            "inserted_scans": inserted_count,
+            "created_at": server_timestamp.isoformat(),
+            "operator_email": user_email,
+            "scans": [
+                {
+                    "scan_code": e.barcode_value,
+                    "timestamp": server_timestamp.isoformat(),
+                    "meta_data": {
+                        "packer": user_email,
+                        "manifest_id": e.manifest_id,
+                        "device": e.device_id
+                    }
+                } for e in request.events
+            ]
+        }
+
+        # Trigger sync in background to prevent mobile timeout
+        background_tasks.add_task(
+            BridgeService.sync_batch_to_main_backend,
+            batch_data,
+            ctx.tenant_id
+        )
+        
+        logger.info(f"Bulk scan committed (took {commit_duration:.2f}s). Bridge sync queued.")
             
     except Exception as e:
         logger.exception(f"Failed to commit bulk scan events: {e}")
