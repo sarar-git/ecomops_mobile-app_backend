@@ -40,12 +40,13 @@ class Base(DeclarativeBase):
     metadata = metadata
 
 
+from sqlalchemy.pool import NullPool
+
 # Create async engine (Render-safe)
 database_url = _normalize_async_database_url(settings.DATABASE_URL)
 
 engine_kwargs = {
     "echo": settings.DEBUG,
-    "pool_pre_ping": True,     # Avoid stale connections on Render
 }
 
 if database_url.startswith("sqlite"):
@@ -54,16 +55,13 @@ if database_url.startswith("sqlite"):
         **engine_kwargs,
     )
 else:
-    # Render-specific optimization: Disable prepared statements if using pgbouncer
-    # Setting to None (not 0) disables them in psycopg 3.
-    engine_kwargs["connect_args"] = {"prepare_threshold": None}
+    # Render-specific optimization: Use NullPool when pgbouncer is used in Transaction Mode.
+    # Also disable server-side prepared statements in psycopg 3.
+    engine_kwargs["connect_args"] = {"prepare_threshold": 0}
     
     engine = create_async_engine(
         database_url,
-        pool_size=settings.DATABASE_POOL_SIZE,
-        max_overflow=settings.DATABASE_MAX_OVERFLOW,
-        pool_recycle=1800,      # Recycle connections every 30 min
-        statement_cache_size=0, # Extra safety for pgbouncer
+        poolclass=NullPool,
         **engine_kwargs,
     )
 
