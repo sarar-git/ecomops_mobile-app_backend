@@ -25,9 +25,11 @@ class BridgeService:
             try:
                 response = await client.post(url, json=batch_data, headers=headers, timeout=15.0)
                 if response.is_error:
-                    logger.error(f"Sync failed with status {response.status_code}: {response.text}")
+                    logger.error(f"Sync failed for batch {batch_data.get('batch_id')} with status {response.status_code}. Response: {response.text}")
                     response.raise_for_status()
                 
                 logger.info(f"Successfully synced batch {batch_data.get('batch_id')} to main backend.")
+            except httpx.HTTPStatusError as e:
+                logger.error(f"HTTPStatusError during bridge sync: {e.response.status_code} - {e.response.text}")
             except Exception:
-                logger.exception("Failed to sync batch to main backend")
+                logger.exception("Unexpected error during bridge sync to main backend")

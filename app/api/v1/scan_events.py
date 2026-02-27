@@ -142,44 +142,53 @@ async def bulk_create_scan_events(
         await db.commit()
         commit_duration = time.time() - start_time
         
-        # Trigger Bridge Sync to Main Backend
-        from app.core.bridge import BridgeService
-        # Get user email for better attribution in main backend
-        user_email = ctx.user_email
+        # Only sync successful scans (new or duplicates)
+        successful_events = [
+            e for e in request.events 
+            if any(r.barcode_value == e.barcode_value and r.success for r in results)
+        ]
         
-        # Get the first available valid manifest to determine scan_type for the bridge
-        valid_manifests = list(manifests.values())
-        scan_type = valid_manifests[0].flow_type.value if valid_manifests else "DISPATCH"
-        
-        batch_data = {
-            "batch_id": f"bulk-{server_timestamp.strftime('%Y%m%d%H%M%S')}-{ctx.user_id[:8]}",
-            "batch_name": f"Mobile Bulk Sync - {server_timestamp.strftime('%H:%M')}",
-            "scan_type": scan_type,
-            "total_scans": len(request.events),
-            "inserted_scans": inserted_count,
-            "created_at": server_timestamp.isoformat(),
-            "operator_email": user_email,
-            "scans": [
-                {
-                    "scan_code": e.barcode_value,
-                    "timestamp": server_timestamp.isoformat(),
-                    "meta_data": {
-                        "packer": user_email,
-                        "manifest_id": e.manifest_id,
-                        "device": e.device_id
-                    }
-                } for e in request.events
-            ]
-        }
+        if not successful_events:
+            logger.info("No successful scans to sync to bridge. Skipping.")
+        else:
+            # Trigger Bridge Sync to Main Backend
+            from app.core.bridge import BridgeService
+            # Get user email for better attribution in main backend
+            user_email = ctx.user_email
+            
+            # Get the first available valid manifest to determine scan_type for the bridge
+            valid_manifests = list(manifests.values())
+            scan_type = valid_manifests[0].flow_type.value if valid_manifests else "DISPATCH"
+            
+            batch_data = {
+                "batch_id": f"bulk-{server_timestamp.strftime('%Y%m%d%H%M%S')}-{ctx.user_id[:8]}",
+                "batch_name": f"Mobile Bulk Sync - {server_timestamp.strftime('%H:%M')}",
+                "scan_type": scan_type,
+                "total_scans": len(successful_events),
+                "inserted_scans": inserted_count,
+                "created_at": server_timestamp.isoformat(),
+                "operator_email": user_email,
+                "scans": [
+                    {
+                        "scan_code": e.barcode_value,
+                        "timestamp": e.scanned_at_local.isoformat() if hasattr(e.scanned_at_local, 'isoformat') else server_timestamp.isoformat(),
+                        "meta_data": {
+                            "packer": user_email,
+                            "manifest_id": e.manifest_id,
+                            "device_id": e.device_id
+                        }
+                    } for e in successful_events
+                ]
+            }
 
-        # Trigger sync in background to prevent mobile timeout
-        background_tasks.add_task(
-            BridgeService.sync_batch_to_main_backend,
-            batch_data,
-            ctx.tenant_id
-        )
-        
-        logger.info(f"Bulk scan committed (took {commit_duration:.2f}s). Bridge sync queued.")
+            # Trigger sync in background to prevent mobile timeout
+            background_tasks.add_task(
+                BridgeService.sync_batch_to_main_backend,
+                batch_data,
+                ctx.tenant_id
+            )
+            
+            logger.info(f"Bulk scan committed (took {commit_duration:.2f}s). Bridge sync queued for {len(successful_events)} scans.")
             
     except Exception as e:
         logger.exception(f"Failed to commit bulk scan events: {e}")
