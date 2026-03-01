@@ -26,7 +26,7 @@ class User(Base):
     )
     warehouse_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("warehouses.id", ondelete="SET NULL"),
+        ForeignKey("wh_warehouses.id", ondelete="SET NULL"),
         nullable=True,
         index=True
     )

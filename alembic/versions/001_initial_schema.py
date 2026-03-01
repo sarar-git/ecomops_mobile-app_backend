@@ -121,10 +121,10 @@ def upgrade() -> None:
             WHERE status = 'OPEN'
         """)
 
-    # Scan Events table
-    if 'scan_events' not in existing_tables:
+    # PD Scan Events table
+    if 'pd_scan_events' not in existing_tables:
         op.create_table(
-            'scan_events',
+            'pd_scan_events',
             sa.Column('id', sa.String(36), primary_key=True),
             sa.Column('tenant_id', sa.String(36), sa.ForeignKey('tenants.id', ondelete='CASCADE'), nullable=False),
             sa.Column('warehouse_id', sa.String(36), sa.ForeignKey('warehouses.id', ondelete='CASCADE'), nullable=False),
@@ -146,17 +146,17 @@ def upgrade() -> None:
         )
         
         # Unique constraint for idempotent scans
-        op.create_unique_constraint('uq_scan_manifest_barcode', 'scan_events', ['manifest_id', 'barcode_value'])
+        op.create_unique_constraint('uq_scan_manifest_barcode', 'pd_scan_events', ['manifest_id', 'barcode_value'])
         
         # Performance indexes
-        op.create_index('ix_scan_tenant_scanned', 'scan_events', ['tenant_id', 'scanned_at_utc'])
-        op.create_index('ix_scan_tenant_manifest', 'scan_events', ['tenant_id', 'manifest_id'])
-        op.create_index('ix_scan_awb', 'scan_events', ['extracted_awb'])
-        op.create_index('ix_scan_order_id', 'scan_events', ['extracted_order_id'])
+        op.create_index('ix_scan_tenant_scanned', 'pd_scan_events', ['tenant_id', 'scanned_at_utc'])
+        op.create_index('ix_scan_tenant_manifest', 'pd_scan_events', ['tenant_id', 'manifest_id'])
+        op.create_index('ix_scan_awb', 'pd_scan_events', ['extracted_awb'])
+        op.create_index('ix_scan_order_id', 'pd_scan_events', ['extracted_order_id'])
 
 
 def downgrade() -> None:
-    op.drop_table('scan_events')
+    op.drop_table('pd_scan_events')
     op.drop_table('manifests')
     op.drop_table('users')
     op.drop_table('warehouses')

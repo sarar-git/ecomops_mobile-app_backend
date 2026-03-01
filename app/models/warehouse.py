@@ -10,7 +10,7 @@ from app.core.database import Base
 class Warehouse(Base):
     """Warehouse model representing a physical location."""
     
-    __tablename__ = "warehouses"
+    __tablename__ = "wh_warehouses"
     
     id: Mapped[str] = mapped_column(
         String(36),

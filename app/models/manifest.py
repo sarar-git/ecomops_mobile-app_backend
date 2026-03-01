@@ -29,7 +29,7 @@ class Manifest(Base):
     )
     warehouse_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("warehouses.id", ondelete="CASCADE"),
+        ForeignKey("wh_warehouses.id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )
