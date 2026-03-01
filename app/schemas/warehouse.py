@@ -7,7 +7,6 @@ from pydantic import BaseModel
 class WarehouseBase(BaseModel):
     """Base warehouse schema."""
     name: str
-    city: str
     location: Optional[str] = None
 
 
@@ -21,7 +20,6 @@ class WarehouseResponse(BaseModel):
     id: int
     tenant_id: str
     name: str
-    city: str
     location: Optional[str] = None
     created_at: Optional[datetime] = None
     

@@ -37,9 +37,9 @@ async def seed_data():
         
         # Create warehouses
         warehouses_data = [
-            {"name": "Mumbai Central Hub", "city": "Mumbai"},
-            {"name": "Delhi NCR Facility", "city": "Delhi"},
-            {"name": "Bangalore Tech Park", "city": "Bangalore"},
+            {"name": "Mumbai Central Hub", "location": "Mumbai"},
+            {"name": "Delhi NCR Facility", "location": "Delhi"},
+            {"name": "Bangalore Tech Park", "location": "Bangalore"},
         ]
         
         warehouses = []
