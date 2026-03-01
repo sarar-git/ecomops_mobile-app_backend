@@ -25,8 +25,6 @@ class Warehouse(Base):
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     code: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     location: Mapped[str] = mapped_column(String(255), nullable=True)
-    address: Mapped[str] = mapped_column(String(500), nullable=True)
-    timezone: Mapped[str] = mapped_column(String(50), default="Asia/Kolkata", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

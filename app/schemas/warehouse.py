@@ -8,8 +8,7 @@ class WarehouseBase(BaseModel):
     """Base warehouse schema."""
     name: str
     city: str
-    address: Optional[str] = None
-    timezone: str = "Asia/Kolkata"
+    location: Optional[str] = None
 
 
 class WarehouseCreate(WarehouseBase):
@@ -23,8 +22,7 @@ class WarehouseResponse(BaseModel):
     tenant_id: str
     name: str
     city: str
-    address: Optional[str] = None
-    timezone: Optional[str] = "Asia/Kolkata"
+    location: Optional[str] = None
     created_at: Optional[datetime] = None
     
     class Config:

@@ -37,6 +37,14 @@ async def lifespan(app: FastAPI):
                         logger.error("DANGER: 'lgs_scan_events' table is missing 'manifest_id' column!")
                         return "REPAIR_SCANS"
                 
+                # Check for critical wh_warehouses columns (tenant_id, code, location)
+                if "wh_warehouses" in existing_tables:
+                    columns = [c["name"] for c in inspector.get_columns("wh_warehouses")]
+                    missing_wh = [c for c in ["tenant_id", "code", "location"] if c not in columns]
+                    if missing_wh:
+                        logger.warning(f"Surgical repair needed for 'wh_warehouses'. Missing: {missing_wh}")
+                        return "REPAIR_WAREHOUSES"
+
                 # Check if basic tables exist
                 required_tables = ["users", "tenants", "wh_warehouses", "manifests", "lgs_scan_events"]
                 missing = [t for t in required_tables if t not in existing_tables]
@@ -59,10 +67,21 @@ async def lifespan(app: FastAPI):
                 except Exception as e:
                     logger.warning(f"Could not clear alembic marker: {e}")
 
-                # Note: We do NOT run create_all here anymore. 
-                # Instead, we rely on the next alembic migration or manual repair
-                # to avoid wiping shared tables like 'users' or 'profiles'.
-                logger.info("Internal repair command sent. Please restart or check Alembic logs.")
+                logger.info("Internal repair completed. Next migration will recreate table.")
+            
+            elif integrity_status == "REPAIR_WAREHOUSES":
+                logger.warning("Integrity check failed (REPAIR_WAREHOUSES). Attempting surgical addition of columns...")
+                # We do this one by one to avoid total failure if some exist
+                try:
+                    await conn.execute(text("ALTER TABLE wh_warehouses ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(36)"))
+                    await conn.execute(text("ALTER TABLE wh_warehouses ADD COLUMN IF NOT EXISTS code VARCHAR(50)"))
+                    await conn.execute(text("ALTER TABLE wh_warehouses ADD COLUMN IF NOT EXISTS location VARCHAR(255)"))
+                    # Set defaults for code to avoid unique constraint issues if we add them later
+                    await conn.execute(text("UPDATE wh_warehouses SET code = 'WH-' || id WHERE code IS NULL"))
+                    logger.info("Surgical repair of wh_warehouses successful.")
+                except Exception as e:
+                    logger.error(f"Surgical repair of wh_warehouses failed: {e}")
+
             elif integrity_status == "SYNC_REQUIRED":
                 logger.error("DANGER: Database is missing critical tables! Mobile app may not function.")
                 logger.info("Please run migrations from the main backend or check DATABASE_URL.")

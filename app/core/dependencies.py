@@ -76,8 +76,7 @@ async def get_current_user(
                         tenant_id=first_tenant.id,
                         name="Main Warehouse",
                         code="MAIN-01",
-                        location="Indore",
-                        address="Default Address"
+                        location="Indore"
                     )
                     db.add(default_wh)
                     await db.commit()
@@ -119,8 +118,7 @@ async def get_current_user(
                 tenant_id=user.tenant_id,
                 name="Main Warehouse",
                 code="AUTO-01",
-                location="Indore",
-                address="Auto-provisioned"
+                location="Indore"
             )
             db.add(default_wh)
             await db.commit()

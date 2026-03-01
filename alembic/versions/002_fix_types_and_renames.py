@@ -36,13 +36,27 @@ def upgrade() -> None:
     inspector = sa.inspect(conn)
     existing_tables = inspector.get_table_names()
 
+    # 2. Fix missing columns in 'wh_warehouses'
+    if 'wh_warehouses' in existing_tables:
+        cols = [c['name'] for c in inspector.get_columns('wh_warehouses')]
+        if 'tenant_id' not in cols:
+            op.add_column('wh_warehouses', sa.Column('tenant_id', sa.String(36), index=True, nullable=True))
+            print("Added 'tenant_id' to 'wh_warehouses'")
+        if 'code' not in cols:
+            op.add_column('wh_warehouses', sa.Column('code', sa.String(50), index=True, nullable=True))
+            # Set a default code for existing rows to avoid null constraints if we add them later
+            op.execute("UPDATE wh_warehouses SET code = 'WH-' || id WHERE code IS NULL")
+            print("Added 'code' to 'wh_warehouses'")
+        if 'location' not in cols:
+            op.add_column('wh_warehouses', sa.Column('location', sa.String(255), nullable=True))
+            print("Added 'location' to 'wh_warehouses'")
+
     # FUNCTION: Dynamically find and drop ALL foreign keys on a column
     def drop_all_fks_on_column(table_name, col_name):
         if table_name not in existing_tables:
             return
             
         print(f"DEBUG: Discovering constraints for {table_name}.{col_name}")
-        # Query information_schema to find the EXACT names of foreign keys
         query = sa.text(f"""
             SELECT
                 tc.constraint_name
@@ -66,13 +80,13 @@ def upgrade() -> None:
         except Exception as e:
             print(f"WARN: Error discovering/dropping constraints on {table_name}: {e}")
 
-    # 2. Force drop ALL warehouse_id foreign keys
+    # 3. Force drop ALL warehouse_id foreign keys before type alteration
     print("Discovering and dropping all warehouse_id foreign keys...")
     drop_all_fks_on_column('users', 'warehouse_id')
     drop_all_fks_on_column('manifests', 'warehouse_id')
     drop_all_fks_on_column('lgs_scan_events', 'warehouse_id')
 
-    # 3. Alter columns to INTEGER
+    # 4. Alter columns to INTEGER
     print("Altering columns to INTEGER...")
     if 'users' in existing_tables:
         op.execute(sa.text('ALTER TABLE "users" ALTER COLUMN "warehouse_id" TYPE INTEGER USING "warehouse_id"::integer'))
@@ -86,7 +100,7 @@ def upgrade() -> None:
         op.execute(sa.text('ALTER TABLE "lgs_scan_events" ALTER COLUMN "warehouse_id" TYPE INTEGER USING "warehouse_id"::integer'))
         print("Altered lgs_scan_events.warehouse_id")
 
-    # 4. Re-add FK constraints pointing to THE CORRECT 'wh_warehouses' table
+    # 5. Re-add FK constraints pointing to THE CORRECT 'wh_warehouses' table
     print("Re-creating foreign keys pointing to wh_warehouses...")
     if 'wh_warehouses' in existing_tables:
         try:
@@ -106,7 +120,7 @@ def upgrade() -> None:
         except Exception as e:
             print(f"WARN: Error re-creating foreign keys: {e}")
 
-    # 5. Final cleanup of legacy table
+    # 6. Final cleanup of legacy table
     if 'warehouses' in existing_tables:
         try:
             op.execute(sa.text('DROP TABLE IF EXISTS "warehouses" CASCADE'))
