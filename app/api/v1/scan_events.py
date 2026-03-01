@@ -53,14 +53,16 @@ async def bulk_create_scan_events(
     
     # Process each event
     server_timestamp = datetime.now(timezone.utc)
+    seen_barcodes = set()
     
     for event_data in request.events:
         manifest = manifests.get(event_data.manifest_id)
+        barcode = event_data.barcode_value
         
         # Check manifest exists
         if manifest is None:
             results.append(BulkScanResult(
-                barcode_value=event_data.barcode_value,
+                barcode_value=barcode,
                 success=False,
                 error=f"Manifest {event_data.manifest_id} not found",
             ))
@@ -70,71 +72,100 @@ async def bulk_create_scan_events(
         # Check manifest is OPEN
         if manifest.status != ManifestStatus.OPEN:
             results.append(BulkScanResult(
-                barcode_value=event_data.barcode_value,
+                barcode_value=barcode,
                 success=False,
                 error=f"Manifest {event_data.manifest_id} is closed",
             ))
             error_count += 1
             continue
+
+        # Check for duplicates WITHIN the same request
+        if barcode in seen_barcodes:
+            results.append(BulkScanResult(
+                barcode_value=barcode,
+                success=True,
+                is_duplicate=True,
+            ))
+            duplicate_count += 1
+            continue
         
-        # Check for existing scan (duplicate detection)
+        # Check for existing scan in DB (duplicate detection)
+        # Optimization: We could do this in one query outside the loop if performance is an issue
         existing_result = await db.execute(
             select(ScanEvent.id)
             .where(
                 ScanEvent.manifest_id == event_data.manifest_id,
-                ScanEvent.barcode_value == event_data.barcode_value
+                ScanEvent.barcode_value == barcode
             )
         )
         existing = existing_result.scalar_one_or_none()
         
         if existing:
             results.append(BulkScanResult(
-                barcode_value=event_data.barcode_value,
+                barcode_value=barcode,
                 success=True,
                 scan_event_id=existing,
                 is_duplicate=True,
             ))
             duplicate_count += 1
+            seen_barcodes.add(barcode)
             continue
         
         # Create new scan event
         try:
-            scan_event = ScanEvent(
-                tenant_id=ctx.tenant_id,
-                warehouse_id=manifest.warehouse_id,
-                manifest_id=manifest.id,
-                flow_type=manifest.flow_type,
-                marketplace=manifest.marketplace,
-                carrier=manifest.carrier,
-                barcode_value=event_data.barcode_value,
-                barcode_type=event_data.barcode_type,
-                ocr_raw_text=event_data.ocr_raw_text,
-                extracted_order_id=event_data.extracted_order_id,
-                extracted_awb=event_data.extracted_awb,
-                scanned_at_utc=server_timestamp,  # Server timestamp, ignore client
-                scanned_at_local=event_data.scanned_at_local,
-                device_id=event_data.device_id,
-                operator_id=ctx.user_id,
-                confidence_score=event_data.confidence_score,
-                sync_status=SyncStatus.SYNCED,
-            )
-            db.add(scan_event)
-            await db.flush()  # Get the ID
-            
-            results.append(BulkScanResult(
-                barcode_value=event_data.barcode_value,
-                success=True,
-                scan_event_id=scan_event.id,
-            ))
-            inserted_count += 1
-            
+            # We use a sub-transaction (savepoint) for each insert to handle 
+            # race conditions where a scan is inserted by another request 
+            # between our check and our insert.
+            async with db.begin_nested():
+                scan_event = ScanEvent(
+                    tenant_id=ctx.tenant_id,
+                    warehouse_id=manifest.warehouse_id,
+                    manifest_id=manifest.id,
+                    flow_type=manifest.flow_type,
+                    marketplace=manifest.marketplace,
+                    carrier=manifest.carrier,
+                    barcode_value=barcode,
+                    barcode_type=event_data.barcode_type,
+                    ocr_raw_text=event_data.ocr_raw_text,
+                    extracted_order_id=event_data.extracted_order_id,
+                    extracted_awb=event_data.extracted_awb,
+                    scanned_at_utc=server_timestamp,
+                    scanned_at_local=event_data.scanned_at_local,
+                    device_id=event_data.device_id,
+                    operator_id=ctx.user_id,
+                    confidence_score=event_data.confidence_score,
+                    sync_status=SyncStatus.SYNCED,
+                )
+                db.add(scan_event)
+                await db.flush()
+                
+                results.append(BulkScanResult(
+                    barcode_value=barcode,
+                    success=True,
+                    scan_event_id=scan_event.id,
+                ))
+                inserted_count += 1
+                seen_barcodes.add(barcode)
+
         except Exception as e:
-            results.append(BulkScanResult(
-                barcode_value=event_data.barcode_value,
-                success=False,
-                error=str(e),
-            ))
-            error_count += 1
+            # If sub-transaction fails (e.g. UniqueViolation), 
+            # check if it was a duplicate that just appeared.
+            if "UniqueViolation" in str(e) or "unique constraint" in str(e).lower():
+                results.append(BulkScanResult(
+                    barcode_value=barcode,
+                    success=True,
+                    is_duplicate=True,
+                ))
+                duplicate_count += 1
+                seen_barcodes.add(barcode)
+            else:
+                logger.error(f"Error inserting scan {barcode}: {e}")
+                results.append(BulkScanResult(
+                    barcode_value=barcode,
+                    success=False,
+                    error=str(e),
+                ))
+                error_count += 1
     
     try:
         import time
@@ -266,15 +297,27 @@ async def list_my_scan_events(
     db: DbSession,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
+    days: Optional[int] = Query(31, ge=1, le=365, description="Number of days of history to fetch"),
 ):
     """List scan events for the current operator across all manifests."""
+    from datetime import timedelta
+    
+    # Calculate cutoff date if days is provided
+    cutoff_date = None
+    if days:
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+
+    filters = [
+        ScanEvent.operator_id == ctx.user_id,
+        ScanEvent.tenant_id == ctx.tenant_id
+    ]
+    if cutoff_date:
+        filters.append(ScanEvent.scanned_at_utc >= cutoff_date)
+
     # Count total
     count_result = await db.execute(
         select(func.count(ScanEvent.id))
-        .where(
-            ScanEvent.operator_id == ctx.user_id,
-            ScanEvent.tenant_id == ctx.tenant_id
-        )
+        .where(*filters)
     )
     total = count_result.scalar() or 0
     
@@ -282,10 +325,7 @@ async def list_my_scan_events(
     offset = (page - 1) * page_size
     events_result = await db.execute(
         select(ScanEvent)
-        .where(
-            ScanEvent.operator_id == ctx.user_id,
-            ScanEvent.tenant_id == ctx.tenant_id
-        )
+        .where(*filters)
         .order_by(ScanEvent.scanned_at_utc.desc())
         .offset(offset)
         .limit(page_size)

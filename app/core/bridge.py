@@ -23,7 +23,8 @@ class BridgeService:
 
         async with httpx.AsyncClient() as client:
             try:
-                response = await client.post(url, json=batch_data, headers=headers, timeout=15.0)
+                # Increased timeout to 30s to handle main backend cold starts or latency
+                response = await client.post(url, json=batch_data, headers=headers, timeout=30.0)
                 if response.is_error:
                     logger.error(f"Sync failed for batch {batch_data.get('batch_id')} with status {response.status_code}. Response: {response.text}")
                     response.raise_for_status()
