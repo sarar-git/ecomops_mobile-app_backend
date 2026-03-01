@@ -24,7 +24,6 @@ def upgrade() -> None:
     existing_tables = inspector.get_table_names()
 
     # 1. Rename pd_scan_events to lgs_scan_events if it exists
-    # If it's already lgs_scan_events, this will skip.
     if 'pd_scan_events' in existing_tables and 'lgs_scan_events' not in existing_tables:
         op.rename_table('pd_scan_events', 'lgs_scan_events')
         print("Renamed pd_scan_events to lgs_scan_events")
@@ -32,35 +31,66 @@ def upgrade() -> None:
         op.rename_table('scan_events', 'lgs_scan_events')
         print("Renamed scan_events to lgs_scan_events")
 
-    # Refresh existing_tables after potential renames
+    # Refresh inspector after potential renames
     inspector = sa.inspect(conn)
     existing_tables = inspector.get_table_names()
 
-    # 2. Fix warehouse_id type in 'users'
+    # FUNCTION: Drop FK if exists
+    def drop_fk_safely(table_name, fk_name):
+        try:
+            op.drop_constraint(fk_name, table_name, type_='foreignkey')
+            print(f"Dropped FK {fk_name} from {table_name}")
+        except Exception:
+            pass # Ignore if doesn't exist
+
+    # 2. Drop existing FK constraints that might block type conversion
+    # These point to the legacy 'warehouses' table which has VARCHAR 'id'
+    fks_to_drop = [
+        ('users', 'fk_users_warehouse_id_warehouses'),
+        ('users', 'users_warehouse_id_fkey'),
+        ('manifests', 'fk_manifests_warehouse_id_warehouses'),
+        ('manifests', 'manifests_warehouse_id_fkey'),
+        ('lgs_scan_events', 'pd_scan_events_warehouse_id_fkey'),
+        ('lgs_scan_events', 'lgs_scan_events_warehouse_id_fkey'),
+        ('lgs_scan_events', 'fk_scan_events_warehouse_id_warehouses'),
+    ]
+    for table, fk in fks_to_drop:
+        if table in existing_tables:
+            drop_fk_safely(table, fk)
+
+    # 3. Alter columns to INTEGER
     if 'users' in existing_tables:
         op.execute("ALTER TABLE users ALTER COLUMN warehouse_id TYPE INTEGER USING warehouse_id::integer")
         print("Altered users.warehouse_id to INTEGER")
 
-    # 3. Fix warehouse_id type in 'manifests'
     if 'manifests' in existing_tables:
         op.execute("ALTER TABLE manifests ALTER COLUMN warehouse_id TYPE INTEGER USING warehouse_id::integer")
         print("Altered manifests.warehouse_id to INTEGER")
 
-    # 4. Fix warehouse_id type in 'lgs_scan_events'
     if 'lgs_scan_events' in existing_tables:
         op.execute("ALTER TABLE lgs_scan_events ALTER COLUMN warehouse_id TYPE INTEGER USING warehouse_id::integer")
         print("Altered lgs_scan_events.warehouse_id to INTEGER")
 
-    # 5. Clean up legacy 'warehouses' table if it exists alongside 'wh_warehouses'
-    if 'warehouses' in existing_tables and 'wh_warehouses' in existing_tables:
-        # Drop indices first to be clean
-        try:
-            op.drop_index('ix_warehouse_tenant_city', table_name='warehouses')
-            op.drop_index('ix_warehouse_tenant_id', table_name='warehouses')
-        except:
-            pass
-        op.drop_table('warehouses')
-        print("Dropped legacy 'warehouses' table")
+    # 4. Re-add FK constraints pointing to THE CORRECT 'wh_warehouses' table
+    if 'wh_warehouses' in existing_tables:
+        op.create_foreign_key(
+            'fk_users_warehouse_id_wh_warehouses', 
+            'users', 'wh_warehouses', ['warehouse_id'], ['id'], ondelete='SET NULL'
+        )
+        op.create_foreign_key(
+            'fk_manifests_warehouse_id_wh_warehouses', 
+            'manifests', 'wh_warehouses', ['warehouse_id'], ['id'], ondelete='CASCADE'
+        )
+        op.create_foreign_key(
+            'fk_lgs_scan_events_warehouse_id_wh_warehouses', 
+            'lgs_scan_events', 'wh_warehouses', ['warehouse_id'], ['id'], ondelete='CASCADE'
+        )
+        print("Re-created foreign keys pointing to wh_warehouses")
+
+    # 5. Final cleanup of legacy table
+    if 'warehouses' in existing_tables:
+        op.execute("DROP TABLE IF EXISTS warehouses CASCADE")
+        print("Dropped legacy 'warehouses' table with CASCADE")
 
 
 def downgrade() -> None:
