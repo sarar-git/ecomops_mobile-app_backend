@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI):
                 # Check for critical wh_warehouses columns (tenant_id, code, location)
                 if "wh_warehouses" in existing_tables:
                     columns = [c["name"] for c in inspector.get_columns("wh_warehouses")]
-                    missing_wh = [c for c in ["tenant_id", "code", "location"] if c not in columns]
+                    missing_wh = [c for c in ["tenant_id", "code", "location", "type"] if c not in columns]
                     if missing_wh:
                         logger.warning(f"Surgical repair needed for 'wh_warehouses'. Missing: {missing_wh}")
                         return "REPAIR_WAREHOUSES"
