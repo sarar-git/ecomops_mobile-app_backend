@@ -1,6 +1,6 @@
 """Warehouse model."""
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, ForeignKey, Index
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import uuid
 

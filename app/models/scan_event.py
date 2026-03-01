@@ -2,7 +2,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 from sqlalchemy import (
-    String, DateTime, ForeignKey, Enum as SQLEnum, 
+    String, Integer, DateTime, ForeignKey, Enum as SQLEnum, 
     Index, UniqueConstraint, Numeric, Text
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship

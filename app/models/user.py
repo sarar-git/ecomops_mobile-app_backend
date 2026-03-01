@@ -1,6 +1,6 @@
 """User model."""
 from datetime import datetime, timezone
-from sqlalchemy import String, Boolean, DateTime, ForeignKey, Enum as SQLEnum, Index
+from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Enum as SQLEnum, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import uuid
 
