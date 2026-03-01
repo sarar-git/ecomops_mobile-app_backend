@@ -134,7 +134,7 @@ async def bulk_create_scan_events(
                     device_id=event_data.device_id,
                     operator_id=ctx.user_id,
                     confidence_score=event_data.confidence_score,
-                    sync_status=SyncStatus.SYNCED,
+                    sync_status=SyncStatus.PENDING,
                 )
                 db.add(scan_event)
                 await db.flush()
@@ -146,6 +146,7 @@ async def bulk_create_scan_events(
                 ))
                 inserted_count += 1
                 seen_barcodes.add(barcode)
+                # No longer need to manually collect IDs here as we filter results later
 
         except Exception as e:
             # If sub-transaction fails (e.g. UniqueViolation), 
@@ -174,9 +175,12 @@ async def bulk_create_scan_events(
         commit_duration = time.time() - start_time
         
         # Only sync successful scans (new or duplicates)
+        successful_results = [r for r in results if r.success and r.scan_event_id]
+        successful_event_ids = [r.scan_event_id for r in successful_results]
+        
         successful_events = [
             e for e in request.events 
-            if any(r.barcode_value == e.barcode_value and r.success for r in results)
+            if any(r.barcode_value == e.barcode_value for r in successful_results)
         ]
         
         if not successful_events:
@@ -216,7 +220,8 @@ async def bulk_create_scan_events(
             background_tasks.add_task(
                 BridgeService.sync_batch_to_main_backend,
                 batch_data,
-                ctx.tenant_id
+                ctx.tenant_id,
+                successful_event_ids
             )
             
             logger.info(f"Bulk scan committed (took {commit_duration:.2f}s). Bridge sync queued for {len(successful_events)} scans.")
