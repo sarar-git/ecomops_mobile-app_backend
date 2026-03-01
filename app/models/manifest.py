@@ -27,8 +27,8 @@ class Manifest(Base):
         nullable=False,
         index=True
     )
-    warehouse_id: Mapped[str] = mapped_column(
-        String(36),
+    warehouse_id: Mapped[int] = mapped_column(
+        Integer,
         ForeignKey("wh_warehouses.id", ondelete="CASCADE"),
         nullable=False,
         index=True

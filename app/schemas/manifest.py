@@ -8,7 +8,7 @@ from app.core.enums import Marketplace, Carrier, FlowType, Shift, ManifestStatus
 
 class ManifestStartRequest(BaseModel):
     """Request to start a new manifest."""
-    warehouse_id: str
+    warehouse_id: int
     manifest_date: date
     shift: Shift
     marketplace: Marketplace
@@ -20,7 +20,7 @@ class ManifestResponse(BaseModel):
     """Manifest response schema."""
     id: str
     tenant_id: str
-    warehouse_id: str
+    warehouse_id: int
     manifest_date: date
     shift: Shift
     marketplace: Marketplace

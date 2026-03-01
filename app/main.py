@@ -30,15 +30,15 @@ async def lifespan(app: FastAPI):
                 inspector = inspect(sync_conn)
                 existing_tables = inspector.get_table_names()
                 
-                # Check for critical manifest_id column in pd_scan_events
-                if "pd_scan_events" in existing_tables:
-                    columns = [c["name"] for c in inspector.get_columns("pd_scan_events")]
+                # Check for critical manifest_id column in lgs_scan_events
+                if "lgs_scan_events" in existing_tables:
+                    columns = [c["name"] for c in inspector.get_columns("lgs_scan_events")]
                     if "manifest_id" not in columns:
-                        logger.error("DANGER: 'pd_scan_events' table is missing 'manifest_id' column!")
+                        logger.error("DANGER: 'lgs_scan_events' table is missing 'manifest_id' column!")
                         return "REPAIR_SCANS"
                 
                 # Check if basic tables exist
-                required_tables = ["users", "tenants", "wh_warehouses", "manifests", "pd_scan_events"]
+                required_tables = ["users", "tenants", "wh_warehouses", "manifests", "lgs_scan_events"]
                 missing = [t for t in required_tables if t not in existing_tables]
                 if missing:
                     logger.warning(f"Missing tables: {missing}")
@@ -50,8 +50,8 @@ async def lifespan(app: FastAPI):
             
             if integrity_status == "REPAIR_SCANS":
                 logger.warning("Integrity check failed (REPAIR_SCANS). Attempting surgical repair of internal table...")
-                logger.info("Dropping broken 'pd_scan_events' table...")
-                await conn.execute(text("DROP TABLE IF EXISTS pd_scan_events"))
+                logger.info("Dropping broken 'lgs_scan_events' table...")
+                await conn.execute(text("DROP TABLE IF EXISTS lgs_scan_events"))
                 
                 try:
                     await conn.execute(text("DROP TABLE IF EXISTS alembic_version_mobile"))

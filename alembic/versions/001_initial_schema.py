@@ -58,19 +58,20 @@ def upgrade() -> None:
         )
 
     # Warehouses table
-    if 'warehouses' not in existing_tables:
+    if 'wh_warehouses' not in existing_tables:
         op.create_table(
-            'warehouses',
-            sa.Column('id', sa.String(36), primary_key=True),
-            sa.Column('tenant_id', sa.String(36), sa.ForeignKey('tenants.id', ondelete='CASCADE'), nullable=False),
-            sa.Column('name', sa.String(255), nullable=False),
-            sa.Column('city', sa.String(100), nullable=False),
+            'wh_warehouses',
+            sa.Column('id', sa.Integer(), primary_key=True),
+            sa.Column('tenant_id', sa.String(36), sa.ForeignKey('tenants.id', ondelete='CASCADE'), nullable=True),
+            sa.Column('name', sa.String(255), nullable=False, unique=True),
+            sa.Column('code', sa.String(50), nullable=False, unique=True),
+            sa.Column('location', sa.String(255), nullable=True),
             sa.Column('address', sa.String(500), nullable=True),
             sa.Column('timezone', sa.String(50), nullable=False, server_default='Asia/Kolkata'),
             sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         )
-        op.create_index('ix_warehouse_tenant_id', 'warehouses', ['tenant_id'])
-        op.create_index('ix_warehouse_tenant_city', 'warehouses', ['tenant_id', 'city'])
+        op.create_index('ix_warehouse_tenant_id', 'wh_warehouses', ['tenant_id'])
+        op.create_index('ix_warehouse_code', 'wh_warehouses', ['code'])
 
     # Users table
     if 'users' not in existing_tables:
@@ -78,7 +79,7 @@ def upgrade() -> None:
             'users',
             sa.Column('id', sa.String(36), primary_key=True),
             sa.Column('tenant_id', sa.String(36), sa.ForeignKey('tenants.id', ondelete='CASCADE'), nullable=False),
-            sa.Column('warehouse_id', sa.String(36), sa.ForeignKey('warehouses.id', ondelete='SET NULL'), nullable=True),
+            sa.Column('warehouse_id', sa.Integer(), sa.ForeignKey('wh_warehouses.id', ondelete='SET NULL'), nullable=True),
             sa.Column('email', sa.String(255), nullable=False),
             sa.Column('hashed_password', sa.String(255), nullable=False),
             sa.Column('full_name', sa.String(255), nullable=True),
@@ -97,7 +98,7 @@ def upgrade() -> None:
             'manifests',
             sa.Column('id', sa.String(36), primary_key=True),
             sa.Column('tenant_id', sa.String(36), sa.ForeignKey('tenants.id', ondelete='CASCADE'), nullable=False),
-            sa.Column('warehouse_id', sa.String(36), sa.ForeignKey('warehouses.id', ondelete='CASCADE'), nullable=False),
+            sa.Column('warehouse_id', sa.Integer(), sa.ForeignKey('wh_warehouses.id', ondelete='CASCADE'), nullable=False),
             sa.Column('manifest_date', sa.Date(), nullable=False),
             sa.Column('shift', postgresql.ENUM('MORNING', 'EVENING', 'NIGHT', name='shift', create_type=False), nullable=False),
             sa.Column('marketplace', postgresql.ENUM('AMAZON', 'FLIPKART', 'MYNTRA', 'JIOMART', 'MEESHO', 'AJIO', name='marketplace', create_type=False), nullable=False),
@@ -121,13 +122,13 @@ def upgrade() -> None:
             WHERE status = 'OPEN'
         """)
 
-    # PD Scan Events table
-    if 'pd_scan_events' not in existing_tables:
+    # Logistics Scan Events table (Formerly scan_events / pd_scan_events)
+    if 'lgs_scan_events' not in existing_tables:
         op.create_table(
-            'pd_scan_events',
+            'lgs_scan_events',
             sa.Column('id', sa.String(36), primary_key=True),
             sa.Column('tenant_id', sa.String(36), sa.ForeignKey('tenants.id', ondelete='CASCADE'), nullable=False),
-            sa.Column('warehouse_id', sa.String(36), sa.ForeignKey('warehouses.id', ondelete='CASCADE'), nullable=False),
+            sa.Column('warehouse_id', sa.Integer(), sa.ForeignKey('wh_warehouses.id', ondelete='CASCADE'), nullable=False),
             sa.Column('manifest_id', sa.String(36), sa.ForeignKey('manifests.id', ondelete='CASCADE'), nullable=False),
             sa.Column('flow_type', postgresql.ENUM('DISPATCH', 'RETURN', name='flowtype', create_type=False), nullable=False),
             sa.Column('marketplace', postgresql.ENUM('AMAZON', 'FLIPKART', 'MYNTRA', 'JIOMART', 'MEESHO', 'AJIO', name='marketplace', create_type=False), nullable=False),
@@ -146,20 +147,20 @@ def upgrade() -> None:
         )
         
         # Unique constraint for idempotent scans
-        op.create_unique_constraint('uq_scan_manifest_barcode', 'pd_scan_events', ['manifest_id', 'barcode_value'])
+        op.create_unique_constraint('uq_scan_manifest_barcode', 'lgs_scan_events', ['manifest_id', 'barcode_value'])
         
         # Performance indexes
-        op.create_index('ix_scan_tenant_scanned', 'pd_scan_events', ['tenant_id', 'scanned_at_utc'])
-        op.create_index('ix_scan_tenant_manifest', 'pd_scan_events', ['tenant_id', 'manifest_id'])
-        op.create_index('ix_scan_awb', 'pd_scan_events', ['extracted_awb'])
-        op.create_index('ix_scan_order_id', 'pd_scan_events', ['extracted_order_id'])
+        op.create_index('ix_scan_tenant_scanned', 'lgs_scan_events', ['tenant_id', 'scanned_at_utc'])
+        op.create_index('ix_scan_tenant_manifest', 'lgs_scan_events', ['tenant_id', 'manifest_id'])
+        op.create_index('ix_scan_awb', 'lgs_scan_events', ['extracted_awb'])
+        op.create_index('ix_scan_order_id', 'lgs_scan_events', ['extracted_order_id'])
 
 
 def downgrade() -> None:
-    op.drop_table('pd_scan_events')
+    op.drop_table('lgs_scan_events')
     op.drop_table('manifests')
     op.drop_table('users')
-    op.drop_table('warehouses')
+    op.drop_table('wh_warehouses')
     op.drop_table('tenants')
     
     # Drop enum types

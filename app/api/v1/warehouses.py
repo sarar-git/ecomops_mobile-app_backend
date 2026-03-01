@@ -38,7 +38,7 @@ async def list_warehouses(
 
 @router.get("/{warehouse_id}", response_model=WarehouseResponse)
 async def get_warehouse(
-    warehouse_id: str,
+    warehouse_id: int,
     ctx: TenantCtx,
     db: DbSession,
 ):

@@ -18,7 +18,7 @@ class TokenPayload(BaseModel):
     email: Optional[str] = None
     role: Optional[str] = None # Custom claim in app_metadata
     tenant_id: Optional[str] = None # Custom claim in app_metadata
-    warehouse_id: Optional[str] = None # Custom claim in app_metadata
+    warehouse_id: Optional[int] = None # Custom claim in app_metadata
     type: Optional[str] = "access" 
     exp: datetime
     iat: datetime
@@ -45,7 +45,7 @@ def create_access_token(
     user_id: str,
     tenant_id: str,
     role: str,
-    warehouse_id: Optional[str] = None,
+    warehouse_id: Optional[int] = None,
 ) -> str:
     """Create a new access token."""
     now = datetime.now(timezone.utc)
@@ -69,7 +69,7 @@ def create_refresh_token(
     user_id: str,
     tenant_id: str,
     role: str,
-    warehouse_id: Optional[str] = None,
+    warehouse_id: Optional[int] = None,
 ) -> str:
     """Create a new refresh token."""
     now = datetime.now(timezone.utc)

@@ -54,7 +54,7 @@ class ScanEventResponse(BaseModel):
     """Scan event response schema."""
     id: str
     tenant_id: str
-    warehouse_id: str
+    warehouse_id: int
     manifest_id: str
     flow_type: FlowType
     marketplace: Marketplace

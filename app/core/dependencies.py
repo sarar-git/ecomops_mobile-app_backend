@@ -75,7 +75,8 @@ async def get_current_user(
                     default_wh = Warehouse(
                         tenant_id=first_tenant.id,
                         name="Main Warehouse",
-                        city="Indore",
+                        code="MAIN-01",
+                        location="Indore",
                         address="Default Address"
                     )
                     db.add(default_wh)
@@ -117,7 +118,8 @@ async def get_current_user(
             default_wh = Warehouse(
                 tenant_id=user.tenant_id,
                 name="Main Warehouse",
-                city="Indore",
+                code="AUTO-01",
+                location="Indore",
                 address="Auto-provisioned"
             )
             db.add(default_wh)

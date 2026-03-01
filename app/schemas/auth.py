@@ -24,7 +24,7 @@ class UserResponse(BaseModel):
     """User response schema."""
     id: str
     tenant_id: str
-    warehouse_id: Optional[str] = None
+    warehouse_id: Optional[int] = None
     email: str
     full_name: Optional[str] = None
     role: UserRole

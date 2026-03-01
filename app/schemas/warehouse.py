@@ -19,7 +19,7 @@ class WarehouseCreate(WarehouseBase):
 
 class WarehouseResponse(BaseModel):
     """Warehouse response schema."""
-    id: str
+    id: int
     tenant_id: str
     name: str
     city: str

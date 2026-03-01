@@ -170,7 +170,7 @@ async def close_manifest(
 async def list_manifests(
     ctx: TenantCtx,
     db: DbSession,
-    warehouse_id: Optional[str] = None,
+    warehouse_id: Optional[int] = None,
     status_filter: Optional[ManifestStatus] = Query(None, alias="status"),
     marketplace: Optional[Marketplace] = None,
     carrier: Optional[Carrier] = None,

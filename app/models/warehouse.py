@@ -12,19 +12,19 @@ class Warehouse(Base):
     
     __tablename__ = "wh_warehouses"
     
-    id: Mapped[str] = mapped_column(
-        String(36),
-        primary_key=True,
-        default=lambda: str(uuid.uuid4())
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True
     )
     tenant_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("tenants.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True
     )
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    city: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    code: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+    location: Mapped[str] = mapped_column(String(255), nullable=True)
     address: Mapped[str] = mapped_column(String(500), nullable=True)
     timezone: Mapped[str] = mapped_column(String(50), default="Asia/Kolkata", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -40,5 +40,5 @@ class Warehouse(Base):
     scan_events = relationship("ScanEvent", back_populates="warehouse")
     
     __table_args__ = (
-        Index("ix_warehouse_tenant_city", "tenant_id", "city"),
+        Index("ix_warehouse_tenant_location", "tenant_id", "location"),
     )

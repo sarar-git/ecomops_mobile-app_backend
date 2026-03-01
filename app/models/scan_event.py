@@ -15,7 +15,7 @@ from app.core.enums import FlowType, Marketplace, Carrier, BarcodeType, SyncStat
 class ScanEvent(Base):
     """ScanEvent model representing a single barcode scan."""
     
-    __tablename__ = "pd_scan_events"
+    __tablename__ = "lgs_scan_events"
     
     id: Mapped[str] = mapped_column(
         String(36),
@@ -27,8 +27,8 @@ class ScanEvent(Base):
         ForeignKey("tenants.id", ondelete="CASCADE"),
         nullable=False
     )
-    warehouse_id: Mapped[str] = mapped_column(
-        String(36),
+    warehouse_id: Mapped[int] = mapped_column(
+        Integer,
         ForeignKey("wh_warehouses.id", ondelete="CASCADE"),
         nullable=False
     )
