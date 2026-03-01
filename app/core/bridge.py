@@ -22,15 +22,24 @@ class BridgeService:
         }
 
         async with httpx.AsyncClient() as client:
-            try:
-                # Increased timeout to 30s to handle main backend cold starts or latency
-                response = await client.post(url, json=batch_data, headers=headers, timeout=30.0)
-                if response.is_error:
-                    logger.error(f"Sync failed for batch {batch_data.get('batch_id')} with status {response.status_code}. Response: {response.text}")
-                    response.raise_for_status()
-                
-                logger.info(f"Successfully synced batch {batch_data.get('batch_id')} to main backend.")
-            except httpx.HTTPStatusError as e:
-                logger.error(f"HTTPStatusError during bridge sync: {e.response.status_code} - {e.response.text}")
-            except Exception:
-                logger.exception("Unexpected error during bridge sync to main backend")
+            for attempt in range(2):  # Simple retry for transient timeouts
+                try:
+                    # Render cold starts or heavy main backend loads can take >30s
+                    response = await client.post(url, json=batch_data, headers=headers, timeout=90.0)
+                    if response.is_error:
+                        logger.error(f"Sync failed for batch {batch_data.get('batch_id')} (Attempt {attempt+1}) with status {response.status_code}. Response: {response.text}")
+                        response.raise_for_status()
+                    
+                    logger.info(f"Successfully synced batch {batch_data.get('batch_id')} to main backend (Attempt {attempt+1}).")
+                    return  # Success
+                except httpx.ReadTimeout:
+                    if attempt == 0:
+                        logger.warning(f"ReadTimeout during bridge sync (Attempt 1). Retrying...")
+                        continue
+                    logger.error("ReadTimeout during bridge sync (Attempt 2). Giving up.")
+                except httpx.HTTPStatusError as e:
+                    logger.error(f"HTTPStatusError during bridge sync: {e.response.status_code} - {e.response.text}")
+                    break # Don't retry auth/config errors
+                except Exception:
+                    logger.exception("Unexpected error during bridge sync to main backend")
+                    break
