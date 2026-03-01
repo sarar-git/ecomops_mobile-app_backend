@@ -112,7 +112,8 @@ async def get_current_user(
             logger.info(f"JIT Provisioned user: {user.id}, tenant: {tenant_id}")
 
         # DEFENSIVE: Ensure the tenant has at least one warehouse
-        if user.tenant and not await db.execute(select(Warehouse.id).where(Warehouse.tenant_id == user.tenant_id).limit(1)):
+        wh_check = await db.execute(select(Warehouse.id).where(Warehouse.tenant_id == user.tenant_id).limit(1))
+        if user.tenant and wh_check.first() is None:
             logger.warning(f"Tenant {user.tenant_id} had no warehouses. Creating default.")
             default_wh = Warehouse(
                 tenant_id=user.tenant_id,
