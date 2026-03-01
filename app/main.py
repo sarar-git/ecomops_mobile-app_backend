@@ -76,7 +76,11 @@ async def lifespan(app: FastAPI):
                     await conn.execute(text("ALTER TABLE wh_warehouses ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(36)"))
                     await conn.execute(text("ALTER TABLE wh_warehouses ADD COLUMN IF NOT EXISTS code VARCHAR(50)"))
                     await conn.execute(text("ALTER TABLE wh_warehouses ADD COLUMN IF NOT EXISTS location VARCHAR(255)"))
-                    # Set defaults for code to avoid unique constraint issues if we add them later
+                    await conn.execute(text("ALTER TABLE wh_warehouses ADD COLUMN IF NOT EXISTS type VARCHAR(20) DEFAULT 'INTERNAL'"))
+                    # Set defaults for internal/marketplace differentiation
+                    await conn.execute(text("UPDATE wh_warehouses SET type = 'INTERNAL' WHERE type IS NULL"))
+                    # If website exists (from main backend), mark as MARKETPLACE
+                    await conn.execute(text("UPDATE wh_warehouses SET type = 'MARKETPLACE' WHERE website IS NOT NULL"))
                     await conn.execute(text("UPDATE wh_warehouses SET code = 'WH-' || id WHERE code IS NULL"))
                     logger.info("Surgical repair of wh_warehouses successful.")
                 except Exception as e:

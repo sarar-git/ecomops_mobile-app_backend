@@ -115,14 +115,21 @@ async def get_current_user(
         wh_check = await db.execute(select(Warehouse.id).where(Warehouse.tenant_id == user.tenant_id).limit(1))
         if user.tenant and wh_check.first() is None:
             logger.warning(f"Tenant {user.tenant_id} had no warehouses. Creating default.")
-            default_wh = Warehouse(
-                tenant_id=user.tenant_id,
-                name="Main Warehouse",
-                code="AUTO-01",
-                location="Indore"
-            )
-            db.add(default_wh)
-            await db.commit()
+            try:
+                async with db.begin_nested(): # Atomic subtransaction
+                    default_wh = Warehouse(
+                        tenant_id=user.tenant_id,
+                        name=f"Warehouse-{user.tenant_id[:8]}", # Use more unique name
+                        code=f"AUTO-{user.tenant_id[:4]}",
+                        location="Default",
+                        type="INTERNAL"
+                    )
+                    db.add(default_wh)
+                await db.commit()
+            except Exception as e:
+                await db.rollback()
+                logger.info(f"Warehouse already exists or parallel creation in progress: {e}")
+                # Safe to continue, the next lookup or request will see it
             # No need to refresh again here unless logic depends strictly on user.warehouse being populated immediately
         
         if not user.is_active:

@@ -25,6 +25,7 @@ class Warehouse(Base):
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     code: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     location: Mapped[str] = mapped_column(String(255), nullable=True)
+    type: Mapped[str] = mapped_column(String(20), server_default="INTERNAL", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

@@ -15,14 +15,16 @@ router = APIRouter()
 async def list_warehouses(
     ctx: TenantCtx,
     db: DbSession,
+    type: str = None,
 ):
     """List all warehouses for the current tenant."""
     try:
-        result = await db.execute(
-            select(Warehouse)
-            .where(Warehouse.tenant_id == ctx.tenant_id)
-            .order_by(Warehouse.name)
-        )
+        query = select(Warehouse).where(Warehouse.tenant_id == ctx.tenant_id)
+        
+        if type:
+            query = query.where(Warehouse.type == type)
+            
+        result = await db.execute(query.order_by(Warehouse.name))
         warehouses = result.scalars().all()
         
         return [WarehouseResponse.model_validate(w) for w in warehouses]

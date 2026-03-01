@@ -8,6 +8,7 @@ class WarehouseBase(BaseModel):
     """Base warehouse schema."""
     name: str
     location: Optional[str] = None
+    type: str = "INTERNAL"
 
 
 class WarehouseCreate(WarehouseBase):
@@ -21,6 +22,7 @@ class WarehouseResponse(BaseModel):
     tenant_id: str
     name: str
     location: Optional[str] = None
+    type: str = "INTERNAL"
     created_at: Optional[datetime] = None
     
     class Config:
