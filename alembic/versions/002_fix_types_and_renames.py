@@ -22,6 +22,7 @@ def upgrade() -> None:
     conn = op.get_bind()
     inspector = sa.inspect(conn)
     existing_tables = inspector.get_table_names()
+    print(f"DEBUG: Existing tables: {existing_tables}")
 
     # 1. Rename pd_scan_events to lgs_scan_events if it exists
     if 'pd_scan_events' in existing_tables and 'lgs_scan_events' not in existing_tables:
@@ -35,62 +36,83 @@ def upgrade() -> None:
     inspector = sa.inspect(conn)
     existing_tables = inspector.get_table_names()
 
-    # FUNCTION: Drop FK if exists
-    def drop_fk_safely(table_name, fk_name):
+    # FUNCTION: Dynamically find and drop ALL foreign keys on a column
+    def drop_all_fks_on_column(table_name, col_name):
+        if table_name not in existing_tables:
+            return
+            
+        print(f"DEBUG: Discovering constraints for {table_name}.{col_name}")
+        # Query information_schema to find the EXACT names of foreign keys
+        query = sa.text(f"""
+            SELECT
+                tc.constraint_name
+            FROM
+                information_schema.table_constraints AS tc
+                JOIN information_schema.key_column_usage AS kcu
+                  ON tc.constraint_name = kcu.constraint_name
+                  AND tc.table_schema = kcu.table_schema
+            WHERE tc.constraint_type = 'FOREIGN KEY' 
+              AND tc.table_name = '{table_name}' 
+              AND kcu.column_name = '{col_name}';
+        """)
+        
         try:
-            op.drop_constraint(fk_name, table_name, type_='foreignkey')
-            print(f"Dropped FK {fk_name} from {table_name}")
-        except Exception:
-            pass # Ignore if doesn't exist
+            result = conn.execute(query)
+            for row in result:
+                fk_name = row[0]
+                print(f"DEBUG: Found FK {fk_name} on {table_name}.{col_name}. Dropping...")
+                op.execute(sa.text(f'ALTER TABLE "{table_name}" DROP CONSTRAINT "{fk_name}" CASCADE'))
+                print(f"SUCCESS: Dropped {fk_name}")
+        except Exception as e:
+            print(f"WARN: Error discovering/dropping constraints on {table_name}: {e}")
 
-    # 2. Drop existing FK constraints that might block type conversion
-    # These point to the legacy 'warehouses' table which has VARCHAR 'id'
-    fks_to_drop = [
-        ('users', 'fk_users_warehouse_id_warehouses'),
-        ('users', 'users_warehouse_id_fkey'),
-        ('manifests', 'fk_manifests_warehouse_id_warehouses'),
-        ('manifests', 'manifests_warehouse_id_fkey'),
-        ('lgs_scan_events', 'pd_scan_events_warehouse_id_fkey'),
-        ('lgs_scan_events', 'lgs_scan_events_warehouse_id_fkey'),
-        ('lgs_scan_events', 'fk_scan_events_warehouse_id_warehouses'),
-    ]
-    for table, fk in fks_to_drop:
-        if table in existing_tables:
-            drop_fk_safely(table, fk)
+    # 2. Force drop ALL warehouse_id foreign keys
+    print("Discovering and dropping all warehouse_id foreign keys...")
+    drop_all_fks_on_column('users', 'warehouse_id')
+    drop_all_fks_on_column('manifests', 'warehouse_id')
+    drop_all_fks_on_column('lgs_scan_events', 'warehouse_id')
 
     # 3. Alter columns to INTEGER
+    print("Altering columns to INTEGER...")
     if 'users' in existing_tables:
-        op.execute("ALTER TABLE users ALTER COLUMN warehouse_id TYPE INTEGER USING warehouse_id::integer")
-        print("Altered users.warehouse_id to INTEGER")
+        op.execute(sa.text('ALTER TABLE "users" ALTER COLUMN "warehouse_id" TYPE INTEGER USING "warehouse_id"::integer'))
+        print("Altered users.warehouse_id")
 
     if 'manifests' in existing_tables:
-        op.execute("ALTER TABLE manifests ALTER COLUMN warehouse_id TYPE INTEGER USING warehouse_id::integer")
-        print("Altered manifests.warehouse_id to INTEGER")
+        op.execute(sa.text('ALTER TABLE "manifests" ALTER COLUMN "warehouse_id" TYPE INTEGER USING "warehouse_id"::integer'))
+        print("Altered manifests.warehouse_id")
 
     if 'lgs_scan_events' in existing_tables:
-        op.execute("ALTER TABLE lgs_scan_events ALTER COLUMN warehouse_id TYPE INTEGER USING warehouse_id::integer")
-        print("Altered lgs_scan_events.warehouse_id to INTEGER")
+        op.execute(sa.text('ALTER TABLE "lgs_scan_events" ALTER COLUMN "warehouse_id" TYPE INTEGER USING "warehouse_id"::integer'))
+        print("Altered lgs_scan_events.warehouse_id")
 
     # 4. Re-add FK constraints pointing to THE CORRECT 'wh_warehouses' table
+    print("Re-creating foreign keys pointing to wh_warehouses...")
     if 'wh_warehouses' in existing_tables:
-        op.create_foreign_key(
-            'fk_users_warehouse_id_wh_warehouses', 
-            'users', 'wh_warehouses', ['warehouse_id'], ['id'], ondelete='SET NULL'
-        )
-        op.create_foreign_key(
-            'fk_manifests_warehouse_id_wh_warehouses', 
-            'manifests', 'wh_warehouses', ['warehouse_id'], ['id'], ondelete='CASCADE'
-        )
-        op.create_foreign_key(
-            'fk_lgs_scan_events_warehouse_id_wh_warehouses', 
-            'lgs_scan_events', 'wh_warehouses', ['warehouse_id'], ['id'], ondelete='CASCADE'
-        )
-        print("Re-created foreign keys pointing to wh_warehouses")
+        try:
+            op.create_foreign_key(
+                'fk_users_warehouse_id_wh_warehouses', 
+                'users', 'wh_warehouses', ['warehouse_id'], ['id'], ondelete='SET NULL'
+            )
+            op.create_foreign_key(
+                'fk_manifests_warehouse_id_wh_warehouses', 
+                'manifests', 'wh_warehouses', ['warehouse_id'], ['id'], ondelete='CASCADE'
+            )
+            op.create_foreign_key(
+                'fk_lgs_scan_events_warehouse_id_wh_warehouses', 
+                'lgs_scan_events', 'wh_warehouses', ['warehouse_id'], ['id'], ondelete='CASCADE'
+            )
+            print("Re-created foreign keys pointing to wh_warehouses")
+        except Exception as e:
+            print(f"WARN: Error re-creating foreign keys: {e}")
 
     # 5. Final cleanup of legacy table
     if 'warehouses' in existing_tables:
-        op.execute("DROP TABLE IF EXISTS warehouses CASCADE")
-        print("Dropped legacy 'warehouses' table with CASCADE")
+        try:
+            op.execute(sa.text('DROP TABLE IF EXISTS "warehouses" CASCADE'))
+            print("Dropped legacy 'warehouses' table with CASCADE")
+        except Exception as e:
+            print(f"WARN: Error dropping legacy warehouses table: {e}")
 
 
 def downgrade() -> None:
