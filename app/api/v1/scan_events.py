@@ -210,6 +210,8 @@ async def bulk_create_scan_events(
                         "meta_data": {
                             "packer": user_email,
                             "manifest_id": e.manifest_id,
+                            "marketplace": manifests.get(e.manifest_id).marketplace.value if manifests.get(e.manifest_id) else "N/A",
+                            "carrier": manifests.get(e.manifest_id).carrier.value if manifests.get(e.manifest_id) else "N/A",
                             "device_id": e.device_id
                         }
                     } for e in successful_events

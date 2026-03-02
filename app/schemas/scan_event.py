@@ -14,6 +14,9 @@ class ScanEventCreate(BaseModel):
     manifest_id: str
     barcode_value: str
     barcode_type: Any = "UNKNOWN"
+    marketplace: Optional[str] = None
+    carrier: Optional[str] = None
+    flow_type: Optional[str] = None
     ocr_raw_text: Optional[str] = None
     extracted_order_id: Optional[str] = None
     extracted_awb: Optional[str] = None
