@@ -5,6 +5,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
+from sqlalchemy.exc import IntegrityError
 
 from app.core.database import get_db
 from app.core.security import decode_token, TokenPayload
@@ -91,25 +92,33 @@ async def get_current_user(
                 except ValueError:
                     logger.warning(f"Unknown role in token: {token.role}, defaulting to MOBILE_USER")
 
-            user = User(
-                id=token.sub,
-                tenant_id=tenant_id,
-                email=token.email or token.user_metadata.get("email") or "unknown@ecomops.com",
-                role=target_role,
-                is_active=True,
-                hashed_password="SUPABASE_AUTH" 
-            )
-            db.add(user)
-            await db.commit()
+            # ATOMIC PROVISIONING: Use nested transaction to handle race conditions
+            try:
+                async with db.begin_nested():
+                    user = User(
+                        id=token.sub,
+                        tenant_id=tenant_id,
+                        email=token.email or token.user_metadata.get("email") or "unknown@ecomops.com",
+                        role=target_role,
+                        is_active=True,
+                        hashed_password="SUPABASE_AUTH" 
+                    )
+                    db.add(user)
+                    await db.flush() # Flush to check for conflicts early
+                await db.commit()
+                logger.info(f"JIT Provisioned user: {user.id}, tenant: {tenant_id}")
+            except Exception as e:
+                # If UniqueViolation, someone else provisioned him in parallel
+                await db.rollback()
+                logger.info(f"User {token.sub} already provisioned by parallel request.")
             
-            # Refresh to load relationships after JIT
+            # Refresh/Load to ensure we have the full object regardless of who created it
             result = await db.execute(
                 select(User)
                 .options(joinedload(User.tenant), joinedload(User.warehouse))
-                .where(User.id == user.id)
+                .where(User.id == token.sub)
             )
             user = result.scalar_one()
-            logger.info(f"JIT Provisioned user: {user.id}, tenant: {tenant_id}")
 
         # DEFENSIVE: Ensure the tenant has at least one warehouse
         wh_check = await db.execute(select(Warehouse.id).where(Warehouse.tenant_id == user.tenant_id).limit(1))
